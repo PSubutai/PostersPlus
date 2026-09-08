@@ -159,7 +159,15 @@ SERVER_MDBLIST_KEYS: list[str] = [k for k in [SERVER_MDBLIST_KEY, SERVER_MDBLIST
 # remaining lifetime with no fixed ceiling. Set to 0 to send no Cache-Control.
 _CDN_CACHE_TTL_RAW    = os.environ.get("CDN_CACHE_TTL", "0").strip().lower()
 CDN_CACHE_TTL_AUTO    = _CDN_CACHE_TTL_RAW == "auto"
-CDN_CACHE_TTL         = 0 if CDN_CACHE_TTL_AUTO else int(_CDN_CACHE_TTL_RAW or "0")
+try:
+    CDN_CACHE_TTL     = 0 if CDN_CACHE_TTL_AUTO else int(_CDN_CACHE_TTL_RAW or "0")
+    CDN_CACHE_TTL_VALID = True
+except ValueError:
+    # A word is a legal value here now, so a typo is a live possibility rather
+    # than a theoretical one. Refusing to boot over a caching hint is a worse
+    # failure than ignoring the hint and saying so.
+    CDN_CACHE_TTL     = 0
+    CDN_CACHE_TTL_VALID = False
 # Image format for composited posters (webp or jpeg). webp is recommended.
 IMAGE_FORMAT          = os.environ.get("IMAGE_FORMAT", "webp").lower()
 # Normalise the common "jpg" alias to the canonical "jpeg" that PIL's save()

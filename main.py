@@ -4035,6 +4035,11 @@ async def lifespan(app: FastAPI):
             f"Quality source: QualiCache at {_cfg.QUALICACHE_URL} "
             f"(minimum trust: {_cfg.QUALICACHE_MIN_TRUST})"
         )
+    if not _cfg.CDN_CACHE_TTL_VALID:
+        logger.warning(
+            f"Unknown CDN_CACHE_TTL={_cfg._CDN_CACHE_TTL_RAW!r} — expected a number of "
+            'seconds or "auto"; sending no Cache-Control.'
+        )
     _configurator_html = _load_configurator_html()
     load_languages()   # poster-output translations (English fallback if absent)
     _render_assets_signature = _compute_render_assets_signature()
