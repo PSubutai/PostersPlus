@@ -1,5 +1,6 @@
 import unittest
 
+import cache
 import main
 import quality
 
@@ -35,10 +36,12 @@ class QualiCacheFetchTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.cached: list[tuple] = []
         self._real_set_cached = quality.set_cached_quality
+        self._real_min_trust = main._cfg.QUALICACHE_MIN_TRUST
         quality.set_cached_quality = lambda *args: self.cached.append(args)
 
     def tearDown(self):
         quality.set_cached_quality = self._real_set_cached
+        main._cfg.QUALICACHE_MIN_TRUST = self._real_min_trust
 
     async def _fetch(self, response, **kwargs):
         client = _FakeClient(response)
@@ -109,6 +112,14 @@ class QualiCacheFetchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.url, "http://qualicache:8000/v1/quality/series/tt0068646")
         self.assertEqual(client.params["season"], 2)
         self.assertEqual(client.params["episode"], 5)
+        self.assertEqual(client.params["min_trust"], "high")
+
+    async def test_configured_minimum_trust_is_forwarded(self):
+        main._cfg.QUALICACHE_MIN_TRUST = "low"
+        _, client = await self._fetch(
+            _FakeResponse(200, {"status": "ready", "tokens": ["1080P"]})
+        )
+        self.assertEqual(client.params["min_trust"], "low")
 
     async def test_movie_omits_season_and_episode(self):
         _, client = await self._fetch(_FakeResponse(200, {"status": "ready", "tokens": ["4K"]}))
@@ -163,6 +174,14 @@ class QualiCacheUrlNormalisationTests(unittest.TestCase):
                     quality._normalize_qualicache_url(raw), "http://qualicache:8000"
                 )
 
+    def test_query_and_fragment_are_not_treated_as_part_of_the_base_url(self):
+        self.assertEqual(
+            quality._normalize_qualicache_url(
+                "https://quality.example/?min_trust=low#settings"
+            ),
+            "https://quality.example",
+        )
+
 
 class QualitySourceSelectionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -204,6 +223,23 @@ class QualitySourceSelectionTests(unittest.IsolatedAsyncioTestCase):
         result = await quality.fetch_quality(client, "tt0068646")
         self.assertIs(result, quality.QUALITY_PENDING)
         self.assertEqual(client.url, "http://qualicache:8000/v1/quality/movie/tt0068646")
+
+
+class QualityCacheContextTests(unittest.TestCase):
+    def setUp(self):
+        self.source = main._cfg.QUALITY_SOURCE
+        self.minimum_trust = main._cfg.QUALICACHE_MIN_TRUST
+
+    def tearDown(self):
+        main._cfg.QUALITY_SOURCE = self.source
+        main._cfg.QUALICACHE_MIN_TRUST = self.minimum_trust
+
+    def test_qualicache_minimum_trust_is_part_of_cache_policy(self):
+        main._cfg.QUALITY_SOURCE = "qualicache"
+        main._cfg.QUALICACHE_MIN_TRUST = "high"
+        self.assertEqual(cache._quality_cache_context(), "qualicache:high")
+        main._cfg.QUALICACHE_MIN_TRUST = "low"
+        self.assertEqual(cache._quality_cache_context(), "qualicache:low")
 
 
 class QualityPendingBackoffTests(unittest.IsolatedAsyncioTestCase):

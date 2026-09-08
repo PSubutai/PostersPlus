@@ -67,6 +67,8 @@ AIOSTREAMS_AUTH       = os.environ.get("AIOSTREAMS_AUTH", "")
 # QUALICACHE_URL:   Base URL of a QualiCache instance — only used when
 #                   QUALITY_SOURCE=qualicache. Example: http://qualicache:8000
 # QUALICACHE_API_KEY: Optional; must match QualiCache's own ACCESS_KEY when set.
+# QUALICACHE_MIN_TRUST: Lowest release-group tier to accept: high (default),
+#                      medium, or low.
 #
 # Unlike aiostreams/scraper, QualiCache never scrapes on the request path: it
 # crawls catalogues in the background and answers from its own SQLite cache, so
@@ -80,6 +82,13 @@ QUALITY_SOURCE        = os.environ.get("QUALITY_SOURCE", "aiostreams").lower().s
 SCRAPER_URL           = os.environ.get("SCRAPER_URL", "").strip()
 QUALICACHE_URL        = os.environ.get("QUALICACHE_URL", "").strip()
 QUALICACHE_API_KEY    = os.environ.get("QUALICACHE_API_KEY", "").strip()
+QUALICACHE_MIN_TRUST_VALUES = ("high", "medium", "low")
+QUALICACHE_MIN_TRUST_RAW = os.environ.get("QUALICACHE_MIN_TRUST", "high").lower().strip()
+QUALICACHE_MIN_TRUST = (
+    QUALICACHE_MIN_TRUST_RAW
+    if QUALICACHE_MIN_TRUST_RAW in QUALICACHE_MIN_TRUST_VALUES
+    else "high"
+)
 SERVER_TMDB_KEY       = os.environ.get("TMDB_API_KEY", "").strip()
 SERVER_MDBLIST_KEY    = os.environ.get("MDBLIST_API_KEY", "").strip()
 SERVER_MDBLIST_KEY_2  = os.environ.get("MDBLIST_API_KEY_2", "").strip()

@@ -162,6 +162,7 @@ All configuration is done via environment variables. Copy `.env.example` to `.en
 | `SCRAPER_URL` | - | Base URL of a Stremio stream addon (e.g. `https://torrentio.strem.fun/`). Only used when `QUALITY_SOURCE=scraper`. Standalone addons like Torrentio and Comet work best; Stremthru Torz requires auth and should be used via AIOStreams instead |
 | `QUALICACHE_URL` | - | Base URL of your QualiCache instance (e.g. `http://qualicache:8000`). Only used when `QUALITY_SOURCE=qualicache` |
 | `QUALICACHE_API_KEY` | - | Must match QualiCache's own `ACCESS_KEY`. Leave blank if QualiCache is unauthenticated |
+| `QUALICACHE_MIN_TRUST` | `high` | Lowest QualiCache release-group tier to accept: `high`, `medium`, or `low` |
 | `QUALITY_OLD_CACHE_DURATION` | `90` | Days to cache quality data for titles older than 2 weeks |
 | `QUALITY_BG_CONCURRENCY` | `5` | Max concurrent background quality fetches |
 | `QUALITY_WAIT_TIMEOUT` | `30` | Maximum seconds to wait when a request enables synchronous quality fetching |
@@ -233,6 +234,8 @@ QUALITY_SOURCE=qualicache
 QUALICACHE_URL=http://qualicache:8000
 # Only if QualiCache sets ACCESS_KEY
 QUALICACHE_API_KEY=
+# Accept known ranked groups only (high), unknown groups too (medium), or all tiers (low)
+QUALICACHE_MIN_TRUST=high
 ```
 
 Leave `AIOSTREAMS_URL` and `AIOSTREAMS_AUTH` unset — they're ignored when

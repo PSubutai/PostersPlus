@@ -389,8 +389,12 @@ _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def _normalize_qualicache_url(url: str) -> str:
-    """Normalise a QualiCache base URL (tolerates a pasted /v1/... path)."""
-    url = url.strip().rstrip("/")
+    """Normalise a QualiCache origin and discard pasted endpoint parameters."""
+    # QUALICACHE_URL is an origin/path prefix, not a request URL. If a user
+    # pastes ``?min_trust=low`` here and we append the endpoint naively, the
+    # endpoint becomes part of that query value and the server receives `/`.
+    # Minimum trust has its own setting and is added to ``params`` below.
+    url = url.strip().split("#", 1)[0].split("?", 1)[0].rstrip("/")
     for suffix in ("/v1/quality", "/v1"):
         if url.endswith(suffix):
             url = url[: -len(suffix)]
@@ -428,7 +432,9 @@ async def fetch_quality_from_qualicache(
         return []
 
     qc_type = "series" if media_type in ("tv", "series") else "movie"
-    params: dict[str, str | int] = {}
+    params: dict[str, str | int] = {
+        "min_trust": _cfg.QUALICACHE_MIN_TRUST,
+    }
     if qc_type == "series":
         params["season"] = season
         params["episode"] = episode

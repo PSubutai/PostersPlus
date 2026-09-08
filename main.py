@@ -4026,7 +4026,15 @@ async def lifespan(app: FastAPI):
     if _quality_source == "qualicache" and not _cfg.QUALICACHE_URL:
         logger.warning("QUALITY_SOURCE=qualicache but QUALICACHE_URL is not set — quality fetching is disabled.")
     if _quality_source == "qualicache" and _cfg.QUALICACHE_URL:
-        logger.info(f"Quality source: QualiCache at {_cfg.QUALICACHE_URL}")
+        if _cfg.QUALICACHE_MIN_TRUST_RAW not in _cfg.QUALICACHE_MIN_TRUST_VALUES:
+            logger.warning(
+                f"Unknown QUALICACHE_MIN_TRUST={_cfg.QUALICACHE_MIN_TRUST_RAW!r} — "
+                "expected high, medium, or low; defaulting to high."
+            )
+        logger.info(
+            f"Quality source: QualiCache at {_cfg.QUALICACHE_URL} "
+            f"(minimum trust: {_cfg.QUALICACHE_MIN_TRUST})"
+        )
     _configurator_html = _load_configurator_html()
     load_languages()   # poster-output translations (English fallback if absent)
     _render_assets_signature = _compute_render_assets_signature()

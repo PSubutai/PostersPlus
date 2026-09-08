@@ -11,6 +11,7 @@ from collections import OrderedDict
 from datetime import datetime
 
 from festivals import LEGACY_LABEL_KEYWORDS
+import config as _cfg
 
 logger = logging.getLogger(__name__)
 
@@ -196,9 +197,13 @@ def init_db() -> None:
             imdb_id      TEXT PRIMARY KEY,
             tokens       TEXT,
             cached_at    INTEGER,
-            release_date TEXT
+            release_date TEXT,
+            cache_context TEXT NOT NULL DEFAULT ''
         )
     """)
+    _add_column_if_missing(
+        conn, "quality_cache", "cache_context", "TEXT NOT NULL DEFAULT ''"
+    )
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS trending_cache (
@@ -938,16 +943,30 @@ def set_cached_rating(
 # Quality cache
 # ---------------------------------------------------------------------------
 
+def _quality_cache_context() -> str:
+    """Policy identity for cached tokens, without storing credentials."""
+    source = _cfg.QUALITY_SOURCE
+    if source == "qualicache":
+        return f"qualicache:{_cfg.QUALICACHE_MIN_TRUST}"
+    return source if source in ("aiostreams", "scraper") else "aiostreams"
+
 def get_cached_quality(imdb_id: str, release_date: str | None = None) -> list[str] | None:
     try:
         row = get_db().execute(
-            "SELECT tokens, cached_at, release_date FROM quality_cache WHERE imdb_id = ?",
+            """SELECT tokens, cached_at, release_date, cache_context
+               FROM quality_cache WHERE imdb_id = ?""",
             (imdb_id,),
         ).fetchone()
         if row is None:
             return None
 
-        tokens_raw, cached_at, stored_release = row
+        tokens_raw, cached_at, stored_release, stored_context = row
+        if stored_context != _quality_cache_context():
+            logger.info(f"Quality cache policy changed for {imdb_id}; refreshing")
+            with _db_lock:
+                get_db().execute("DELETE FROM quality_cache WHERE imdb_id = ?", (imdb_id,))
+                get_db().commit()
+            return None
         ttl_release = release_date or stored_release
         age_days    = (time.time() - cached_at) / 86400
         if age_days > _quality_ttl(ttl_release):
@@ -974,10 +993,16 @@ def set_cached_quality(
             get_db().execute(
                 """
                 INSERT OR REPLACE INTO quality_cache
-                    (imdb_id, tokens, cached_at, release_date)
-                VALUES (?, ?, ?, ?)
+                    (imdb_id, tokens, cached_at, release_date, cache_context)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (imdb_id, "|".join(tokens), int(time.time()), release_date),
+                (
+                    imdb_id,
+                    "|".join(tokens),
+                    int(time.time()),
+                    release_date,
+                    _quality_cache_context(),
+                ),
             )
             get_db().commit()
     except Exception as exc:
