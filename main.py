@@ -611,6 +611,7 @@ from ratings import (
     draw_frosted_bar,
     draw_score_bar,
     fetch_rating,
+    is_anime_rated,
     parse_custom_score_palette,
     score_color_for_mode,
     _draw_solid_pip,
@@ -1050,6 +1051,11 @@ class RequestConfig:
 
     movie_weights: dict | None = None
     tv_weights:    dict | None = None
+    # Opt-in weights for titles carrying an anime rating (see is_anime_rated).
+    # None means "same as movie_weights / tv_weights", which is what every URL
+    # from before these existed gets.
+    anime_movie_weights: dict | None = None
+    anime_tv_weights:    dict | None = None
     fallback_to_imdb: bool = False
     # Where the "imdb" weight comes from. "mdblist" (default) is the MDBList
     # response, same as every other weighted source. "dataset" looks it up
@@ -1180,6 +1186,30 @@ def _parse_hex_color(val: str | None) -> tuple[int, int, int] | None:
         return (int(v[0:2], 16), int(v[2:4], 16), int(v[4:6], 16))
     except ValueError:
         return None
+
+
+def _select_rating_weights(
+    ratings: dict,
+    media_type: str,
+    *,
+    anime_native: bool,
+    movie_weights: dict,
+    tv_weights: dict,
+    anime_movie_weights: dict,
+    anime_tv_weights: dict,
+) -> dict:
+    """The weight set a title scores with.
+
+    A title is anime when it carries a rating from an anime source, or was
+    requested by anime id — the same fact known before the fetch, and the one
+    that still holds when the provider returned no score. The caller passes
+    the movie/TV set again as the anime set when the request named no anime
+    weights, which is what keeps pre-existing URLs scoring as they always did.
+    """
+    anime = anime_native or is_anime_rated(ratings)
+    if media_type in ("tv", "series"):
+        return anime_tv_weights if anime else tv_weights
+    return anime_movie_weights if anime else movie_weights
 
 
 def _parse_weights(raw: str | None, sources: list[str]) -> dict | None:
@@ -1498,6 +1528,12 @@ def build_request_config(params: dict) -> RequestConfig:
 
     tv_sources = list(_cfg.TV_WEIGHTS.keys())
     cfg.tv_weights = _parse_weights(params.get("tv_weights"), tv_sources)
+    cfg.anime_movie_weights = _parse_weights(
+        params.get("anime_movie_weights"), list(_cfg.ANIME_MOVIE_SOURCES)
+    )
+    cfg.anime_tv_weights = _parse_weights(
+        params.get("anime_tv_weights"), list(_cfg.ANIME_TV_SOURCES)
+    )
     cfg.fallback_to_imdb = _b("fallback_to_imdb", cfg.fallback_to_imdb)
     _irs = params.get("imdb_rating_source", cfg.imdb_rating_source).strip().lower()
     cfg.imdb_rating_source = (
@@ -4871,6 +4907,8 @@ async def get_poster(
     badge_anchor_y: str | None = None,
     movie_weights: str | None = None,
     tv_weights: str | None = None,
+    anime_movie_weights: str | None = None,
+    anime_tv_weights: str | None = None,
     logo_language: str | None = None,
     sash_priority: str | None = None,
     muted: str | None = None,
@@ -5329,6 +5367,19 @@ async def get_poster(
 
     effective_movie_weights = rcfg.movie_weights or _cfg.MOVIE_WEIGHTS
     effective_tv_weights    = rcfg.tv_weights    or _cfg.TV_WEIGHTS
+    # Anime weights are opt-in: a URL naming neither scores its anime with the
+    # two sets above, exactly as it did before the anime parameters existed.
+    effective_anime_movie_weights = rcfg.anime_movie_weights or effective_movie_weights
+    effective_anime_tv_weights    = rcfg.anime_tv_weights    or effective_tv_weights
+
+    def _weights_for(ratings: dict) -> dict:
+        return _select_rating_weights(
+            ratings, type, anime_native=is_anime,
+            movie_weights=effective_movie_weights,
+            tv_weights=effective_tv_weights,
+            anime_movie_weights=effective_anime_movie_weights,
+            anime_tv_weights=effective_anime_tv_weights,
+        )
 
     if _HTTP_CLIENT is None:
         raise HTTPException(status_code=503, detail="Service unavailable")
@@ -6119,9 +6170,10 @@ async def get_poster(
             # is safe even when neither source has anything to offer.
             ratings_dict     = _merge_imdb_dataset_rating(ratings_dict, effective_imdb_id, rcfg)
             ratings_dict     = _merge_direct_tmdb_rating(ratings_dict, tmdb_data, rcfg)
+            rating_weights   = _weights_for(ratings_dict)
             score            = calculate_weighted_score(
                 ratings_dict,
-                effective_tv_weights if type in ("tv", "series") else effective_movie_weights,
+                rating_weights,
                 fallback_to_imdb=rcfg.fallback_to_imdb,
                 fallback_source=anime_namespace if is_anime else None,
             )
@@ -6175,14 +6227,10 @@ async def get_poster(
             if isinstance(ratings_dict, dict):
                 ratings_dict = _merge_imdb_dataset_rating(ratings_dict, effective_imdb_id, rcfg)
                 ratings_dict = _merge_direct_tmdb_rating(ratings_dict, tmdb_data, rcfg)
-                weights = (
-                    effective_tv_weights
-                    if type in ("tv", "series")
-                    else effective_movie_weights
-                )
+                rating_weights = _weights_for(ratings_dict)
                 score = calculate_weighted_score(
                     ratings_dict,
-                    weights,
+                    rating_weights,
                     fallback_to_imdb=rcfg.fallback_to_imdb,
                     # The provider's score is the only rating an anime-native
                     # title has, and existing weights strings name none of the
@@ -6192,6 +6240,7 @@ async def get_poster(
                 )
             else:
                 score = ratings_dict
+                rating_weights = None
 
             if rating_already_cached:
                 award_wins       = cached_award_wins
@@ -6367,6 +6416,10 @@ async def get_poster(
                 "tmdb_id":           tmdb_id,
                 "type":              type,
                 "score":             score if isinstance(score, str) else int(score),
+                "is_anime":          is_anime or (
+                    isinstance(ratings_dict, dict) and is_anime_rated(ratings_dict)
+                ),
+                "rating_weights":    rating_weights,
                 "genre":             genre,
                 "release_year":      release_year,
                 "release_date":      rel,

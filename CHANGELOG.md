@@ -99,6 +99,18 @@
 
 ### Ratings
 
+- Added separate rating weights for anime. `anime_movie_weights` and
+  `anime_tv_weights` take the same `source:weight` list as `movie_weights` /
+  `tv_weights` and apply to any title carrying a MyAnimeList, AniList or Kitsu
+  rating — MDBList supplies the MyAnimeList score for anime it knows, so this
+  covers anime requested by ordinary TMDB/IMDb id as well as the anime-native
+  path. Both are opt-in: a URL naming neither scores its anime with the movie
+  and TV weights exactly as before, so nothing changes for existing URLs. The
+  source lists are what MDBList actually returns for anime: anime films carry
+  every movie source, while anime series never carry a Metacritic critic score
+  or a Roger Ebert review (dropped) but do often carry Letterboxd (added). The
+  Weights tab gains a **Separate Anime Weights** toggle that reveals the two
+  groups, and `debug=1` now reports `is_anime` and the `rating_weights` used.
 - Added an MDBList-free way to source two of the weighted rating inputs.
   `tmdb_rating_source=direct` uses TMDB's own vote average — already fetched
   alongside genre/year/credits, so it costs nothing extra and needs no MDBList

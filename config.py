@@ -545,6 +545,38 @@ TV_WEIGHTS = {   # set weight of TV ranking providers, must sum to 1
     "kitsu":          0,
 }
 
+# Anime weights
+#
+# A title counts as anime when it carries a rating from any of these sources —
+# nothing else about it is consulted, no genre or keyword heuristics. MDBList
+# returns a MyAnimeList score for anime it knows by IMDb id, so this catches
+# anime requested the ordinary way by TMDB/IMDb id; AniList and Kitsu only ever
+# appear on the anime-native path, which is anime by definition.
+ANIME_RATING_SOURCES = ("myanimelist", "anilist", "kitsu")
+
+# Sources a request may name in anime_movie_weights / anime_tv_weights.
+#
+# Deliberately no server-side default alongside these: a request that sends
+# neither parameter scores its anime with MOVIE_WEIGHTS / TV_WEIGHTS (or the
+# request's own movie_weights / tv_weights), exactly as before the anime
+# parameters existed, so existing URLs render the same score.
+#
+# The lists are what MDBList actually returned for anime, sampled over ~30
+# titles in Sep 2026. Anime movies carried every movie source. Anime shows
+# never carried a Roger Ebert review, and a Metacritic critic score appeared
+# once with 5 votes — under RATING_MIN_VOTES — so both are left out; Letterboxd,
+# which TV_WEIGHTS omits, was present on half the shows sampled and is kept.
+ANIME_MOVIE_SOURCES = (
+    "myanimelist", "anilist", "kitsu",
+    "letterboxd", "trakt", "tomatoes", "popcorn", "imdb",
+    "metacritic", "metacriticuser", "tmdb", "rogerebert",
+)
+
+ANIME_TV_SOURCES = (
+    "myanimelist", "anilist", "kitsu",
+    "trakt", "tomatoes", "popcorn", "imdb", "metacriticuser", "tmdb", "letterboxd",
+)
+
 RATING_MIN_VOTES = max(0, int(os.environ.get("RATING_MIN_VOTES", "10")))
 
 # Map badge file names to strings (no need to touch)

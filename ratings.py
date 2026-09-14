@@ -17,6 +17,7 @@ except ImportError:
 from awards import (FETCH_FAILED, _FetchFailed, _RateLimited, dominant_frost_rgb,
                     _frost_ink, _frosted_tint)
 from config import (
+    ANIME_RATING_SOURCES,
     GENRE_MAP,
     GENRE_PRIORITY,
     SCORE_NORMALISERS,
@@ -668,6 +669,17 @@ def draw_frosted_bar(
 
 # Weighted score
 # ---------------------------------------------------------------------------
+
+def is_anime_rated(ratings: dict) -> bool:
+    """True when *ratings* carries a score from an anime source.
+
+    This is the whole test for whether a title scores with the anime weights:
+    a MyAnimeList, AniList or Kitsu rating is present, or it isn't. The
+    sources are only ever populated for anime, so no genre or keyword
+    guesswork is needed on top.
+    """
+    return any(source in ratings for source in ANIME_RATING_SOURCES)
+
 
 def calculate_weighted_score(
     ratings: dict,

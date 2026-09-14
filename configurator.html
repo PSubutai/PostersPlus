@@ -3173,6 +3173,35 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <span class="weight-sum-val" id="tv-sum">100%</span>
               </div>
             </div>
+
+            <div class="cfg-gap">
+              <span class="group-title">Anime</span>
+              <div class="toggle-row">
+                <span class="toggle-label" data-tip="Score anime with its own weights instead of the Movie / TV sets above. A title counts as anime when it has a MyAnimeList, AniList or Kitsu rating — MDBList supplies the MyAnimeList score for anime it knows, so this works for ordinary TMDB/IMDb ids too. Off, or absent from the URL, means anime scores exactly as before.">Separate Anime Weights</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-anime-weights" onchange="updateAnimeWeightFields(); build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+            </div>
+
+            <div class="cfg-gap" id="anime-movie-weights-group" style="display:none">
+              <span class="group-title" data-tip="Only the sources MDBList actually returns for anime films are listed — that is every movie source plus MyAnimeList. Normalization always reaches 100%.">Anime Movies</span>
+              <div class="weight-grid" id="anime-movie-weights"></div>
+              <div class="weight-total">
+                <span>Total</span>
+                <span class="weight-sum-val" id="anime-movie-sum">100%</span>
+              </div>
+            </div>
+
+            <div class="cfg-gap" id="anime-tv-weights-group" style="display:none">
+              <span class="group-title" data-tip="Only the sources MDBList actually returns for anime series are listed. Metacritic critic scores and Roger Ebert reviews never appear for them, so they are left out; Letterboxd does appear for about half. Normalization always reaches 100%.">Anime TV</span>
+              <div class="weight-grid" id="anime-tv-weights"></div>
+              <div class="weight-total">
+                <span>Total</span>
+                <span class="weight-sum-val" id="anime-tv-sum">100%</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3375,6 +3404,16 @@ const SOURCE_LABELS = {
 };
 const DEFAULT_MOVIE_W = {letterboxd:0.99,trakt:0.01,tomatoes:0,popcorn:0,imdb:0,metacritic:0,metacriticuser:0,tmdb:0,rogerebert:0,myanimelist:0,anilist:0,kitsu:0};
 const DEFAULT_TV_W    = {trakt:0.8,tomatoes:0.2,popcorn:0,imdb:0,metacritic:0,metacriticuser:0,tmdb:0,myanimelist:0,anilist:0,kitsu:0};
+// Opt-in weights for titles carrying an anime rating (MyAnimeList via MDBList,
+// or AniList / Kitsu on the anime-native path). Kept in sync with
+// ANIME_MOVIE_SOURCES / ANIME_TV_SOURCES in config.py: only the sources MDBList
+// actually returns for anime are listed, so the anime-TV set drops Metacritic
+// critic and Roger Ebert and gains Letterboxd. Absent from the URL, anime
+// scores with the Movie / TV sets above.
+const ANIME_MOVIE_SOURCES = ['myanimelist','anilist','kitsu','letterboxd','trakt','tomatoes','popcorn','imdb','metacritic','metacriticuser','tmdb','rogerebert'];
+const ANIME_TV_SOURCES    = ['myanimelist','anilist','kitsu','trakt','tomatoes','popcorn','imdb','metacriticuser','tmdb','letterboxd'];
+const DEFAULT_ANIME_MOVIE_W = {myanimelist:0.6,anilist:0,kitsu:0,letterboxd:0.4,trakt:0,tomatoes:0,popcorn:0,imdb:0,metacritic:0,metacriticuser:0,tmdb:0,rogerebert:0};
+const DEFAULT_ANIME_TV_W    = {myanimelist:0.6,anilist:0,kitsu:0,trakt:0.4,tomatoes:0,popcorn:0,imdb:0,metacriticuser:0,tmdb:0,letterboxd:0};
 
 const CLIENT_INSETS = {
   stremio_tv_nuvio:    { bar: 0.000, notch: 0.000 },
@@ -3778,6 +3817,13 @@ function updateScraperHint() {
   updateWaitQualityRows();
 }
 
+// The two anime weight groups only mean anything while the toggle is on.
+function updateAnimeWeightFields() {
+  const on = c('tog-anime-weights');
+  document.getElementById('anime-movie-weights-group').style.display = on ? '' : 'none';
+  document.getElementById('anime-tv-weights-group').style.display    = on ? '' : 'none';
+}
+
 // "Greyscale if No Quality" only applies while Wait for Quality is on, so it's
 // only shown then.
 function updateWaitQualityRows() {
@@ -3845,7 +3891,7 @@ function updateWeightSum(containerId) {
   const inputs = document.querySelectorAll(`#${containerId} input[data-container="${containerId}"]`);
   let total = 0;
   inputs.forEach(el => { total += parseFloat(el.value); });
-  const sumEl = document.getElementById(containerId === 'movie-weights' ? 'movie-sum' : 'tv-sum');
+  const sumEl = document.getElementById(containerId.replace(/-weights$/, '-sum'));
   sumEl.textContent = Math.round(total * 100) + '%';
   sumEl.className = 'weight-sum-val ' + (Math.abs(total - 1.0) < 0.001 ? 'ok' : total > 1 ? 'err' : 'warn');
 }
@@ -4757,6 +4803,13 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
     };
     params.set('movie_weights', _weights(mw));
     params.set('tv_weights',    _weights(tw));
+    // Anime weights are opt-in on the server too: leaving both out is what
+    // says "score anime with the Movie / TV sets", so the toggle's off state
+    // is the absence of the parameters rather than a parameter of its own.
+    if (c('tog-anime-weights')) {
+      params.set('anime_movie_weights', _weights(getWeights('anime-movie-weights', ANIME_MOVIE_SOURCES)));
+      params.set('anime_tv_weights',    _weights(getWeights('anime-tv-weights',    ANIME_TV_SOURCES)));
+    }
   }
 
   // ── Logo ───────────────────────────────────────────────────────────────────
@@ -5068,6 +5121,9 @@ function resetDefaults() {
   updateGradientFields();
   buildWeightSection('movie-weights', MOVIE_SOURCES, DEFAULT_MOVIE_W);
   buildWeightSection('tv-weights',    TV_SOURCES,    DEFAULT_TV_W);
+  buildWeightSection('anime-movie-weights', ANIME_MOVIE_SOURCES, DEFAULT_ANIME_MOVIE_W);
+  buildWeightSection('anime-tv-weights',    ANIME_TV_SOURCES,    DEFAULT_ANIME_TV_W);
+  updateAnimeWeightFields();
   sashOrder    = SASH_SLOTS.filter(s => !SASH_DEFAULT_DISABLED.has(s.id)).map(s => s.id);
   sashDisabled = new Set(SASH_DEFAULT_DISABLED);
   localStorage.removeItem('postersplus_sash_order');
@@ -6043,6 +6099,16 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   }
   applyWeights('movie_weights', 'movie-weights', MOVIE_SOURCES);
   applyWeights('tv_weights',    'tv-weights',    TV_SOURCES);
+  // Either anime parameter present means the URL opted in; a URL from before
+  // they existed carries neither and leaves the toggle off.
+  if (p.has('anime_movie_weights') || p.has('anime_tv_weights')) {
+    _setEl('tog-anime-weights', true);
+    applyWeights('anime_movie_weights', 'anime-movie-weights', ANIME_MOVIE_SOURCES);
+    applyWeights('anime_tv_weights',    'anime-tv-weights',    ANIME_TV_SOURCES);
+  } else {
+    _setEl('tog-anime-weights', false);
+  }
+  updateAnimeWeightFields();
 
   // ── Persist API keys and rebuild ────────────────────────────────────────
   if (!settingsOnly) saveApiKeys();
@@ -6119,6 +6185,9 @@ function _resetFormToDefaults() {
 _resetFormToDefaults();
 buildWeightSection('movie-weights', MOVIE_SOURCES, DEFAULT_MOVIE_W);
 buildWeightSection('tv-weights',    TV_SOURCES,    DEFAULT_TV_W);
+buildWeightSection('anime-movie-weights', ANIME_MOVIE_SOURCES, DEFAULT_ANIME_MOVIE_W);
+buildWeightSection('anime-tv-weights',    ANIME_TV_SOURCES,    DEFAULT_ANIME_TV_W);
+updateAnimeWeightFields();
 
 document.querySelectorAll('input[type="range"]').forEach(el => {
   const m = el.getAttribute('oninput')?.match(/update(?:Weight)?Range\(this,'([^']+)'\)/);

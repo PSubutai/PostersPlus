@@ -460,6 +460,21 @@ Scores from multiple providers are normalised to a 0–100 scale and combined us
 
 Weights renormalise over the sources actually present for a title, so a source with no score contributes nothing rather than dragging the average down. That makes the anime-only sources safe to weight: `myanimelist` (via MDBList, for anything with an IMDb id) and `anilist` / `kitsu` (only for titles requested by [anime id](#anime-ids-anilist--kitsu)) are inert on everything else. All three default to a weight of `0`.
 
+### Anime Weights
+
+Anime can score with its own weights. `anime_movie_weights` and `anime_tv_weights` take the same `source:weight` list as `movie_weights` / `tv_weights`, and apply to any title that has a `myanimelist`, `anilist` or `kitsu` rating — that is the whole test, no genre guesswork. MDBList returns a MyAnimeList score for the anime it knows, so a title requested by ordinary TMDB/IMDb id qualifies just as an anime-native request does.
+
+Both parameters are opt-in. A URL that names neither scores its anime with the movie and TV weights exactly as before, so existing URLs are unaffected. In the configurator, the Weights tab's **Separate Anime Weights** toggle reveals the two groups.
+
+The source lists are what MDBList actually returns for anime. Anime films carry every movie source. Anime series never carry a Metacritic critic score or a Roger Ebert review, so `anime_tv_weights` does not offer them; Letterboxd, which `tv_weights` omits, does appear for about half of anime series and is offered.
+
+| Parameter | Sources |
+|---|---|
+| `anime_movie_weights` | `myanimelist`, `anilist`, `kitsu`, `letterboxd`, `trakt`, `tomatoes`, `popcorn`, `imdb`, `metacritic`, `metacriticuser`, `tmdb`, `rogerebert` |
+| `anime_tv_weights` | `myanimelist`, `anilist`, `kitsu`, `trakt`, `tomatoes`, `popcorn`, `imdb`, `metacriticuser`, `tmdb`, `letterboxd` |
+
+`debug=1` reports `is_anime` and the `rating_weights` a title was scored with.
+
 ---
 
 ## Poster Translations
