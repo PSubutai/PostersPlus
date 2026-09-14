@@ -1917,6 +1917,7 @@ def _compute_movie_status_from_dates(
     digital_date: _date | None,
     physical_date: _date | None,
     tmdb_status: str | None,
+    premiere_date: _date | None = None,
 ) -> str:
     today = _date.today()
     has_physical = physical_date is not None and physical_date <= today
@@ -1936,7 +1937,16 @@ def _compute_movie_status_from_dates(
             return "Streaming"
         else:
             return "Cinema"
-    elif tmdb_status == "Released":
+    elif tmdb_status == "Released" and not any(
+        d is not None and d > today
+        for d in (theatrical_date, digital_date, physical_date, premiere_date)
+    ):
+        # "Released" with no dates at all is a film TMDB knows nothing else
+        # about — assume it is out somewhere.  "Released" with only *future*
+        # dates is TMDB flipping the flag early (it does, weeks ahead of a
+        # limited theatrical run); the dates are the better witness.  A
+        # festival premiere is not a release, so it never makes a title
+        # "Cinema" above — but a future one is still proof it is not out.
         return "Streaming"
     else:
         return "Production"
@@ -1952,11 +1962,23 @@ def _release_info_expiry(info: dict) -> int:
     """
     upcoming: list[int] = []
     today = _date.today()
-    for key in ("theatrical_date", "digital_date", "physical_date"):
+    for key in ("theatrical_date", "digital_date", "physical_date", "premiere_date"):
         parsed = _parse_tmdb_date(info.get(key))
         if parsed is not None and parsed > today:
             upcoming.append(int(_datetime.combine(parsed, _time.min).timestamp()))
     return release_status_expiry(info.get("status"), upcoming_dates=upcoming)
+
+
+def _release_info_is_current(info: dict) -> bool:
+    """Whether a cached release row was written by code that read every date
+    type.  Rows predate the ``premiere_date`` field only if they were written
+    when limited-theatrical (type 2) and premiere (type 1) dates were skipped;
+    one that recorded no dates at all may simply have missed them, and sat at
+    "Streaming" for a month on the strength of TMDB's early "Released" flag.
+    A dated legacy row is trusted — it had a full release to key off."""
+    if "premiere_date" in info:
+        return True
+    return any(info.get(k) for k in ("theatrical_date", "digital_date", "physical_date"))
 
 
 async def fetch_movie_release_info(
@@ -1968,12 +1990,13 @@ async def fetch_movie_release_info(
     """Cached TMDB movie release-date facts used by release-status and freshness sashes."""
     cache_key = f"movie_{tmdb_id}"
     cached = get_cached_movie_release_info(cache_key)
-    if cached:
+    if cached and _release_info_is_current(cached):
         cached["status"] = _compute_movie_status_from_dates(
             _parse_tmdb_date(cached.get("theatrical_date")),
             _parse_tmdb_date(cached.get("digital_date")),
             _parse_tmdb_date(cached.get("physical_date")),
             tmdb_status,
+            _parse_tmdb_date(cached.get("premiere_date")),
         )
         return cached
 
@@ -1983,6 +2006,7 @@ async def fetch_movie_release_info(
         "theatrical_date": None,
         "digital_date": None,
         "physical_date": None,
+        "premiere_date": None,
     }
 
     _pre_release = {"In Production", "Post Production", "Planned", "Rumored"}
@@ -2016,6 +2040,7 @@ async def fetch_movie_release_info(
     earliest_digital: _date | None = None
     latest_digital: _date | None = None
     earliest_physical: _date | None = None
+    earliest_premiere: _date | None = None
 
     for entry in resp.json().get("results", []):
         for rd in entry.get("release_dates", []):
@@ -2031,15 +2056,19 @@ async def fetch_movie_release_info(
                     earliest_digital = rdate
                 if latest_digital is None or rdate > latest_digital:
                     latest_digital = rdate
-            elif rtype == 3:
+            elif rtype in (2, 3):   # theatrical, limited or wide — both are cinemas
                 if earliest_theatrical is None or rdate < earliest_theatrical:
                     earliest_theatrical = rdate
+            elif rtype == 1:        # festival / premiere — dated, but not a release
+                if earliest_premiere is None or rdate < earliest_premiere:
+                    earliest_premiere = rdate
 
     result = _compute_movie_status_from_dates(
         earliest_theatrical,
         earliest_digital,
         earliest_physical,
         tmdb_status,
+        earliest_premiere,
     )
 
     info = {
@@ -2048,6 +2077,7 @@ async def fetch_movie_release_info(
         "digital_date": earliest_digital.isoformat() if earliest_digital else None,
         "physical_date": earliest_physical.isoformat() if earliest_physical else None,
         "digital_latest_date": latest_digital.isoformat() if latest_digital else None,
+        "premiere_date": earliest_premiere.isoformat() if earliest_premiere else None,
     }
     set_cached_movie_release_info(cache_key, info, _release_info_expiry(info))
     return info
@@ -2074,6 +2104,60 @@ async def fetch_recent_movie_digital_release_date(
     return digital.isoformat() if 0 <= age <= max_age_days else None
 
 
+# The status a movie moves to when each dated window opens — the second half
+# of a dated sash ("Oct 16 Cinema"), so a viewer can tell a theatrical date
+# from one they can actually watch at home.
+_RELEASE_WINDOW_STATUS = {
+    "theatrical_date": "Cinema",
+    "digital_date":    "Streaming",
+    "physical_date":   "Physical",
+}
+
+
+async def fetch_upcoming_movie_release(
+    client: httpx.AsyncClient,
+    tmdb_id: str,
+    tmdb_key: str,
+    tmdb_status: str | None,
+    *,
+    status: str | None,
+    primary_release_date: str | None = None,
+) -> tuple[str, str] | None:
+    """The next published date a "Cinema" / "Production" movie moves on, as
+    ``(YYYY-MM-DD, window)`` where *window* is the status it moves to —
+    "Cinema", "Streaming" or "Physical".
+
+    "Production" waits on its first release anywhere — theatrical, digital or
+    disc, whichever TMDB has dated soonest.  The details endpoint's primary
+    release date stands in when the release-dates row has none: the pre-release
+    shortcut in fetch_movie_release_info never asks TMDB for them, and that
+    date is all but always the theatrical one.  "Cinema" is already in
+    theatres, so only the home dates count — its theatrical date would just
+    restate the status.  Anything else has nothing to wait for.
+    """
+    if status not in ("Cinema", "Production"):
+        return None
+    info = await fetch_movie_release_info(client, tmdb_id, tmdb_key, tmdb_status) or {}
+    keys = (
+        ("theatrical_date", "digital_date", "physical_date")
+        if status == "Production" else ("digital_date", "physical_date")
+    )
+    today = _date.today()
+    upcoming: list[tuple[_date, str]] = []
+    for key in keys:
+        parsed = _parse_tmdb_date(info.get(key))
+        if parsed is not None and parsed > today:
+            upcoming.append((parsed, _RELEASE_WINDOW_STATUS[key]))
+    if not upcoming and status == "Production":
+        primary = _parse_tmdb_date(primary_release_date)
+        if primary is not None and primary > today:
+            upcoming.append((primary, "Cinema"))
+    if not upcoming:
+        return None
+    soonest, window = min(upcoming)
+    return soonest.isoformat(), window
+
+
 async def fetch_release_status(
     client: httpx.AsyncClient,
     tmdb_id: str,
@@ -2090,9 +2174,10 @@ async def fetch_release_status(
 
     Movies: consults ``/movie/{id}/release_dates`` to determine whether the
     film is on physical media (Physical), digital/streaming (Streaming), still
-    theatrical-only (Cinema), or not yet released (Production).  The result is
-    cached in ``release_status_cache`` with a per-row deadline — the status tier,
-    or the film's next published release date when TMDB has told us one.
+    theatrical-only (Cinema), or not yet released (Production).  The dates are
+    cached in ``movie_release_info_cache`` with a per-row deadline — the status
+    tier, or the film's next published release date when TMDB has told us one —
+    and ``release_status_cache`` mirrors the status derived from them.
 
     Returns one of: "Physical" | "Streaming" | "Cinema" | "Production" |
                     "Returning" | "Ended" | "Cancelled" | None.
@@ -2132,19 +2217,23 @@ async def fetch_release_status(
             set_cached_release_status(cache_key, result)
         return result
 
+    # The release-info row is the source of truth for movies: it is cached on
+    # the same deadline, and a hit recomputes the status from the stored dates
+    # rather than replaying a snapshot.  The status row used to short-circuit
+    # this, which meant a row written from incomplete dates could sit for its
+    # whole tier — "Streaming" is thirty days — shadowing the corrected answer.
     cached = get_cached_release_status(cache_key)
-    if cached:
-        return cached
-
     info = await fetch_movie_release_info(client, tmdb_id, tmdb_key, tmdb_status)
     result = (info or {}).get("status")
+    if not result:
+        return cached
 
-    if result:
+    # Mirrored for the cache stats and for requests that arrive while the
+    # info fetch is failing; only written when it actually moved.
+    if cached != result:
         # Movies carry published dates, so the status row can be told exactly
         # when it is next allowed to be wrong.
-        set_cached_release_status(
-            cache_key, result, _release_info_expiry(info) if info else None
-        )
+        set_cached_release_status(cache_key, result, _release_info_expiry(info))
     return result
 
 

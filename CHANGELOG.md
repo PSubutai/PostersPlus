@@ -44,6 +44,13 @@
 - Added independent notch padding so the space above and below a label can be
   tightened without shrinking the font, changing the badge width, or moving the
   notch.
+- The release-status sash now shows the date an unreleased movie arrives, and
+  where, when TMDB has published one — `Oct 16 Cinema`, `Oct 23 Streaming`, or
+  `Dec 2027 Cinema` when it is a year or more away — instead of a bare
+  `Cinema` / `Production`. In cinemas the date is the next digital or disc
+  release; in production it is the first release anywhere. Translated in every
+  shipped language, and switchable off with the new Release Status: Show Date
+  toggle (`release_status_dates=false`).
 
 ### Configurator
 
@@ -174,6 +181,19 @@
   warming reuses the trending snapshot it already fetched.
 - Rating-provider failure counters are now pruned together with their expired
   backoff state.
+- Fixed movies wearing TV awards. TMDB movie and TV ids are separate
+  namespaces, but the Emmy and Golden Globe id lists were searched as one, so
+  *Back to the Future* (movie/105) inherited *Sex and the City*'s Emmy and
+  *Donnie Darko* (movie/141) inherited *Cheers*'s. Lookups now use the film or
+  TV lists by media type, and cached rating rows rebuild their Globe / Emmy
+  labels on read so existing rows correct themselves.
+- Fixed unreleased movies reading `Streaming`. TMDB flips a film to `Released`
+  ahead of its first date, and limited-theatrical and festival-premiere dates
+  were not being read at all, so a title like *You Can See Everything* (two
+  festival premieres, limited release in October) had no dates to contradict
+  the flag. Limited releases now count as theatrical, a future premiere counts
+  as proof the film is not out, and cached rows that recorded no dates are
+  re-fetched once.
 
 ### Performance And Reliability
 

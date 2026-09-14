@@ -26,6 +26,19 @@ _TRENDING_RE = re.compile(r"^#(\d+)\s+Today$")
 # Composite nominee labels are joined with this separator in discovery.pick_sash.
 _NOM_SEP = " • "
 
+# Dated release-status labels come out of discovery.release_date_label as
+# "Oct 16 Cinema" or "Dec 2027 Cinema".  They translate through the
+# "releaseDay" / "releaseMonth" templates ({month}, {day}, {year}, {window})
+# so a language can reorder the parts; the window is the plain status label
+# ("Cinema" / "Streaming" / "Physical") and translates through its own entry,
+# and the month name comes from the top-level "monthsShort" list (twelve
+# entries, January first).
+_RELEASE_DATE_RE = re.compile(
+    r"^([A-Z][a-z]{2}) (\d{1,2}|\d{4}) (Cinema|Streaming|Physical)$"
+)
+_MONTHS_EN = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
 
 def load_languages() -> None:
     """Load every languages/*.json into memory once (call at startup)."""
@@ -67,6 +80,29 @@ def _table(lang: str | None, key: str) -> dict:
     return {}
 
 
+def _months_short(lang: str | None) -> tuple[str, ...]:
+    for code in _lang_candidates(lang):
+        months = _LANGS.get(code, {}).get("monthsShort")
+        if isinstance(months, list) and len(months) == 12:
+            return tuple(str(m) for m in months)
+    return _MONTHS_EN
+
+
+def _translate_release_date(match: "re.Match[str]", sl: dict, lang: str | None) -> str:
+    month_en, rest, window_en = match.group(1), match.group(2), match.group(3)
+    if month_en not in _MONTHS_EN:
+        return match.group(0)
+    month = _months_short(lang)[_MONTHS_EN.index(month_en)]
+    window = sl.get(window_en, window_en)
+    if len(rest) == 4:
+        tmpl = sl.get("releaseMonth")
+        return (tmpl.replace("{month}", month).replace("{year}", rest).replace("{window}", window)
+                if tmpl else match.group(0))
+    tmpl = sl.get("releaseDay")
+    return (tmpl.replace("{month}", month).replace("{day}", rest).replace("{window}", window)
+            if tmpl else match.group(0))
+
+
 def translate_genre(name: str | None, lang: str | None) -> str:
     """Canonical English genre name → localized, or unchanged if no translation."""
     if not name:
@@ -92,6 +128,10 @@ def translate_sash(label: str | None, lang: str | None) -> str:
     if m:
         tmpl = sl.get("trendingToday")
         return tmpl.replace("{rank}", m.group(1)) if tmpl else label
+
+    m = _RELEASE_DATE_RE.match(label)
+    if m:
+        return _translate_release_date(m, sl, lang)
 
     if _NOM_SEP in label:
         return _NOM_SEP.join(sl.get(part, part) for part in label.split(_NOM_SEP))

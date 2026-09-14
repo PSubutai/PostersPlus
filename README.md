@@ -434,7 +434,7 @@ Sashes display contextual metadata about a title - awards, festival recognition,
 | True Story | Based on a true story |
 | Short / Mini / Binge | Short film, miniseries, or bingeable series |
 | Trending (Broad) | Lower-ranked trending titles, rank `TRENDING_FETCH_COUNT`+1–`TRENDING_BROAD_FETCH_COUNT` (default 41–100) |
-| Release Status | Title's current release state: Cinema / Streaming / Physical / Production for movies, Airing / Ended / Cancelled for TV. Lowest default priority; movies require an extra TMDB API call the first time |
+| Release Status | Title's current release state: Cinema / Streaming / Physical / Production for movies, Airing / Ended / Cancelled for TV. Lowest default priority; movies require an extra TMDB API call the first time. When TMDB has dated an unreleased movie, the sash shows the date and what it opens instead — `Oct 16 Cinema`, `Oct 23 Streaming`, or `Dec 2027 Cinema` a year or more out (in cinemas: the next digital/disc date; in production: the first release anywhere). `release_status_dates=false` keeps the bare status |
 
 Sash priority order is configurable in the web configurator via drag-and-drop. The Primary Client selector sets recommended edge insets: Stremio TV, Nuvio, Plex, and Jellyfin use `0` for both bar and notch; Stremio Desktop/Web use `0.007` for the bar and `0.004` for the notch. Both sliders remain manually adjustable, and loading a preset preserves them. Existing URLs can override the notch with `sash_badge_inset` and the bar with `bar_bottom_inset`. Individual sashes can be disabled entirely with the ✕ button - disabled sashes are serialised as `-slot_name` in the URL (e.g. `&sash_priority=wins,cast,-trending`).
 

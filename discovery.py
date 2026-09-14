@@ -351,6 +351,39 @@ def _is_recent_or_upcoming(value: str | None) -> bool:
     return -TV_RECENT_EPISODE_DAYS <= delta <= TV_RETURNING_LOOKAHEAD_DAYS
 
 
+_MONTHS_SHORT = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def release_date_label(
+    release_date: str | None,
+    window: str | None,
+    *,
+    today: date | None = None,
+) -> str | None:
+    """"Oct 16 Cinema" for a future *release_date*, "Dec 2027 Cinema" once it is
+    a year or more away, None for anything absent or already passed.
+
+    *window* is the status the date opens — Cinema / Streaming / Physical — and
+    it is part of the label because the date alone would overpromise: a
+    theatrical date is not one the viewer can watch at home.
+
+    The day form is unambiguous for the next twelve months — "Feb 10" read in
+    September can only mean the coming February — and beyond that the day is
+    noise TMDB is likely to revise anyway, so the month and year carry it.
+    """
+    rd = _parse_date(release_date)
+    if rd is None or not window:
+        return None
+    today = today or date.today()
+    if rd <= today:
+        return None
+    month = _MONTHS_SHORT[rd.month - 1]
+    if (rd - today).days >= 365:
+        return f"{month} {rd.year} {window}"
+    return f"{month} {rd.day} {window}"
+
+
 def _episode_date(ep: dict | None) -> str | None:
     return (ep or {}).get("air_date") or None
 
@@ -435,6 +468,13 @@ class DiscoveryMeta:
     # Movies: "Physical" | "Streaming" | "Cinema" | "Production"
     # TV:     "Returning" | "Ended" | "Cancelled" | "Production"
     release_status: str | None = None
+    # The next date a "Cinema" / "Production" movie moves on (YYYY-MM-DD) and
+    # the status it moves to ("Cinema" / "Streaming" / "Physical"), when TMDB
+    # has published one.  The sash then reads "Oct 16 Cinema" rather than the
+    # bare status; release_status itself stays semantic for the greyscale
+    # treatment, cache tiers and slot matching.
+    upcoming_release_date: str | None = None
+    upcoming_release_window: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -457,6 +497,8 @@ def extract_discovery_meta(
     is_metacritic_override:   bool | None = None,
     is_digital_release_override: bool | None = None,
     release_status_override: str | None = None,
+    upcoming_release_date: str | None = None,
+    upcoming_release_window: str | None = None,
     recent_digital_release_date: str | None = None,
     notable_studios:   dict[str, str] | None = None,
     notable_directors: dict[str, str] | None = None,
@@ -516,6 +558,8 @@ def extract_discovery_meta(
 
     if release_status_override is not None:
         meta.release_status = release_status_override
+    meta.upcoming_release_date = upcoming_release_date
+    meta.upcoming_release_window = upcoming_release_window
 
     if _is_recent(recent_digital_release_date):
         meta.is_just_added = True
@@ -757,14 +801,24 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return None
 
     if slot == "release_status":
-        return meta.release_status  # already a display string or None
+        return _release_status_label(meta)
 
     if slot in ("cinema", "streaming", "physical", "production", "ended", "cancelled", "airing"):
         if meta.release_status and meta.release_status.lower() == slot:
-            return meta.release_status
+            return _release_status_label(meta)
         return None
 
     return None
+
+
+def _release_status_label(meta: DiscoveryMeta) -> str | None:
+    """The status as a display string — or, for an unreleased movie whose next
+    date TMDB has published, that date and what it opens ("Oct 16 Cinema")."""
+    if meta.release_status in ("Cinema", "Production"):
+        label = release_date_label(meta.upcoming_release_date, meta.upcoming_release_window)
+        if label:
+            return label
+    return meta.release_status
 
 
 # ---------------------------------------------------------------------------

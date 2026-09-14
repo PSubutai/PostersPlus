@@ -26,8 +26,11 @@
     "Soap": "Telenovela",
     "Talk": "Talk Show"
   },
+  "monthsShort": ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"],
   "sashLabels": {
     "trendingToday": "#{rank} hoy",
+    "releaseDay": "{window} {day} {month}",
+    "releaseMonth": "{window} {month} {year}",
     "New Season": "Nueva temporada",
     "Returning": "Regresa",
     "Physical": "Formato físico",

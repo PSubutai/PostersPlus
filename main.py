@@ -560,7 +560,7 @@ async def _background_quality_fetch(
 from age_badge import draw_quality_age_badge, draw_quality_corner_bookmark, draw_tier_bar, _score_points
 from landscape import build_landscape
 from awards import _dominant_cluster, _is_skin_tone, dominant_frost_rgb
-from awards import FETCH_FAILED, _RateLimited, draw_award_badge, draw_award_sash, parse_mdblist_awards
+from awards import FETCH_FAILED, _RateLimited, draw_award_badge, draw_award_sash, parse_mdblist_awards, reconcile_cached_awards
 from festivals import match_festival_keyword
 from i18n import load_languages, translate_genre, translate_sash
 from cache import (
@@ -618,7 +618,7 @@ from ratings import (
     _score_color_alt,
     _score_color_metal,
 )
-from tmdb import composite_logo, logo_centre_y, fetch_logo, image_language_order, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_landscape_image, fetch_trending_rank, fetch_trending_candidates, fetch_popular_candidates, fetch_supplemental_candidates, fetch_catalog_candidates, fetch_release_status, fetch_recent_movie_digital_release_date, svg_logo_supported, tmdb_metadata_cache_key, _CROP_VERSION, _fetch_metahub_logo, LOGO_ABS_MAX_H, TEXT_FORWARD_PRIORITIES as _TEXT_FORWARD_LOGO_PRIORITIES
+from tmdb import composite_logo, logo_centre_y, fetch_logo, image_language_order, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_landscape_image, fetch_trending_rank, fetch_trending_candidates, fetch_popular_candidates, fetch_supplemental_candidates, fetch_catalog_candidates, fetch_release_status, fetch_upcoming_movie_release, fetch_recent_movie_digital_release_date, svg_logo_supported, tmdb_metadata_cache_key, _CROP_VERSION, _fetch_metahub_logo, LOGO_ABS_MAX_H, TEXT_FORWARD_PRIORITIES as _TEXT_FORWARD_LOGO_PRIORITIES
 
 # Logo priorities that consult the secondary preferred language ("custom").
 # Elsewhere the secondary language is inert and must be kept out of the image
@@ -978,6 +978,7 @@ class RequestConfig:
     cinema_greyscale:    bool = True    # greyscale art when release_status == "Cinema"
     cinema_greyscale_skip_if_available: bool = False  # keep colour if Web/Remux source found
     release_status_cinema_only: bool = False  # only show release status when "Cinema"
+    release_status_dates: bool = True   # "Oct 16 Cinema" instead of Cinema / Production when TMDB has dated it
     badge_display_mode:  int  = field(default_factory=lambda: _cfg.BADGE_DISPLAY_MODE)
     rating_display_mode: int  = field(default_factory=lambda: _cfg.SHOW_RATING_DISPLAY_MODE)
 
@@ -1319,6 +1320,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.cinema_greyscale        = _b("cinema_greyscale",       cfg.cinema_greyscale)
     cfg.cinema_greyscale_skip_if_available = _b("cinema_greyscale_skip_if_available", cfg.cinema_greyscale_skip_if_available)
     cfg.release_status_cinema_only = _b("release_status_cinema_only", cfg.release_status_cinema_only)
+    cfg.release_status_dates    = _b("release_status_dates",   cfg.release_status_dates)
     cfg.muted                   = _b("muted",                  cfg.muted)
     cfg.score_out_of_10         = _b("score_out_of_10",        cfg.score_out_of_10)
     cfg.textless                = _b("textless",               cfg.textless)
@@ -3739,7 +3741,7 @@ async def _run_cache_warm_cycle(client: httpx.AsyncClient) -> None:
             continue
 
         ratings_dict, genre, rel, keywords, age_rating = result
-        award_wins, award_noms = parse_mdblist_awards(keywords, tmdb_id=tmdb_id)
+        award_wins, award_noms = parse_mdblist_awards(keywords, tmdb_id=tmdb_id, media_type=media_type)
         kw_names = {(kw.get("name") or "").lower().strip() for kw in keywords}
         festival_keyword = match_festival_keyword(kw_names)
         is_cult       = bool({"cult-classic", "cult-film"} & kw_names)
@@ -5195,6 +5197,13 @@ async def get_poster(
             cached_is_true_story,
             cached_is_metacritic,
         ) = cached_rating
+        # Globe / Emmy labels come from the TMDB id alone, so they are rebuilt
+        # here rather than read back: a stored label outlives its own
+        # correction, and rows written before movie and TV ids were kept in
+        # separate namespaces carry an "Emmy Winner" for Back to the Future.
+        cached_award_wins, cached_award_noms = reconcile_cached_awards(
+            cached_award_wins, cached_award_noms, tmdb_id, type,
+        )
     else:
         cached_ratings_dict     = None
         cached_genre            = None
@@ -5288,6 +5297,9 @@ async def get_poster(
                     cached_is_true_story,
                     cached_is_metacritic,
                 ) = _refreshed
+                cached_award_wins, cached_award_noms = reconcile_cached_awards(
+                    cached_award_wins, cached_award_noms, tmdb_id, type,
+                )
                 rating_already_cached        = True
                 release_date_for_quality_ttl = cached_release_date
                 logger.info(f"Rating coalesce succeeded for {canonical_id} — using cached result")
@@ -6193,6 +6205,7 @@ async def get_poster(
                 award_wins, award_noms = parse_mdblist_awards(
                     keywords,
                     tmdb_id=tmdb_id,
+                    media_type=type,
                 )
                 kw_names = {(kw.get("name") or "").lower().strip() for kw in keywords}
                 festival_keyword = match_festival_keyword(kw_names)
@@ -6281,6 +6294,26 @@ async def get_poster(
             if rcfg.release_status_cinema_only and _release_status not in ("Cinema", "Production"):
                 _release_status = None
 
+        # An unreleased movie with a published date wears the date and the
+        # window it opens instead of the bare status ("Oct 16 Cinema").
+        # Resolved after the overrides above so a leaked title that just became
+        # "Streaming" is not dated.  Reads the same cached release-dates row the
+        # status came from, so this is not a second TMDB call.
+        _upcoming_release_date: str | None = None
+        _upcoming_release_window: str | None = None
+        if (rcfg.release_status_dates
+                and _release_status in ("Cinema", "Production")
+                and type not in ("tv", "series")
+                and has_tmdb_id and effective_tmdb_key):
+            _upcoming = await fetch_upcoming_movie_release(
+                client, tmdb_id, effective_tmdb_key,
+                tmdb_data.get("tmdb_status"),
+                status=_release_status,
+                primary_release_date=tmdb_data.get("tmdb_release_date"),
+            )
+            if _upcoming:
+                _upcoming_release_date, _upcoming_release_window = _upcoming
+
         if (type not in ("tv", "series") and "just_added" in rcfg.sash_priority
                 and has_tmdb_id and effective_tmdb_key):
             _recent_digital_release_date = await fetch_recent_movie_digital_release_date(
@@ -6308,6 +6341,8 @@ async def get_poster(
                 effective_imdb_id and is_digital_release(effective_imdb_id)
             ),
             release_status_override=_release_status,
+            upcoming_release_date=_upcoming_release_date,
+            upcoming_release_window=_upcoming_release_window,
             recent_digital_release_date=_recent_digital_release_date,
         )
 
@@ -6359,6 +6394,8 @@ async def get_poster(
                 "matched_directors": discovery_meta.matched_directors,
                 "matched_cast":      discovery_meta.matched_cast,
                 "release_status":    discovery_meta.release_status,
+                "upcoming_release_date": discovery_meta.upcoming_release_date,
+                "upcoming_release_window": discovery_meta.upcoming_release_window,
                 "sash_priority":     _sash_priority,
                 "badge_display_mode":rcfg.badge_display_mode,
                 "rating_display_mode":rcfg.rating_display_mode,

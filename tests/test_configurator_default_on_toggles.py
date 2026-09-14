@@ -4,10 +4,10 @@ import unittest
 
 
 # Almost every configurator switch is off by default on both sides, so build()
-# can omit its param when unchecked.  These two are the exception: the renderer
+# can omit its param when unchecked.  These are the exception: the renderer
 # defaults them to *on*, so an omitted param means "on" and a switch that only
 # writes itself when checked can never turn anything off.
-DEFAULT_ON_PARAMS = ("vignette_color_ramp", "vignette_color_local")
+DEFAULT_ON_PARAMS = ("vignette_color_ramp", "vignette_color_local", "release_status_dates")
 
 
 class DefaultOnToggleTests(unittest.TestCase):

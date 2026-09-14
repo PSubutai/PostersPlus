@@ -26,8 +26,11 @@
     "Soap": "Soap opera",
     "Talk": "Talk show"
   },
+  "monthsShort": ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"],
   "sashLabels": {
     "trendingToday": "#{rank} Oggi",
+    "releaseDay": "{window} {day} {month}",
+    "releaseMonth": "{window} {month} {year}",
     "New Season": "Nuova stagione",
     "Returning": "Di ritorno",
     "Physical": "Formato fisico",

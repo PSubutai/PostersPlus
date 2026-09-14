@@ -27,8 +27,11 @@
     "Soap": "Soap",
     "Talk": "Talk"
   },
+  "monthsShort": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
   "sashLabels": {
     "trendingToday": "#{rank} Today",
+    "releaseDay": "{month} {day} {window}",
+    "releaseMonth": "{month} {year} {window}",
     "New Season": "New Season",
     "Returning": "Returning",
     "Physical": "Physical",

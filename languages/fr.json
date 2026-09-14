@@ -26,8 +26,11 @@
     "Soap": "Feuilleton",
     "Talk": "Talk-show"
   },
+  "monthsShort": ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"],
   "sashLabels": {
     "trendingToday": "#{rank} Aujourd'hui",
+    "releaseDay": "{window} {day} {month}",
+    "releaseMonth": "{window} {month} {year}",
     "New Season": "Nouvelle saison",
     "Returning": "Retour",
     "Physical": "Support physique",
