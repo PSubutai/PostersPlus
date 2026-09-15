@@ -738,6 +738,14 @@ GOLDEN_GLOBE_TV_LIMITED_NOM_TMDB_IDS: set[int] = {
 # ---------------------------------------------------------------------------
 
 EMMY_DRAMA_NOM_TMDB_IDS: set[int] = {
+    # 2026 (78th)
+    203857,   # The Diplomat
+    81723,    # The Gilded Age
+    224372,   # A Knight of the Seven Kingdoms
+    245927,   # Paradise
+    225171,   # Pluribus
+    95480,    # Slow Horses
+    241609,   # Your Friends & Neighbors
     # 2025 (77th)
     83867,    # Star Wars: Andor
     203857,   # The Diplomat
@@ -820,6 +828,14 @@ EMMY_DRAMA_NOM_TMDB_IDS: set[int] = {
 }
 
 EMMY_COMEDY_NOM_TMDB_IDS: set[int] = {
+    # 2026 (78th)
+    125935,   # Abbott Elementary
+    136315,   # The Bear
+    124101,   # Hacks
+    245318,   # Margo's Got Money Troubles
+    250923,   # Nobody Wants This
+    107113,   # Only Murders in the Building
+    136311,   # Shrinking
     # 2025 (77th)
     125935,   # Abbott Elementary
     136315,   # The Bear
@@ -929,6 +945,11 @@ EMMY_COMEDY_NOM_TMDB_IDS: set[int] = {
 }
 
 EMMY_LIMITED_NOM_TMDB_IDS: set[int] = {
+    # 2026 (78th)
+    246386,   # All Her Fault
+    250504,   # The Beast in Me
+    154385,   # Beef
+    131142,   # Love Story: John F. Kennedy Jr. & Carolyn Bessette
     # 2025 (77th)
     42009,    # Black Mirror
     241405,   # Dying for Sex
@@ -1067,6 +1088,7 @@ _EMMY_ALL_NOMS: set[int] = (
 
 EMMY_WINNER_TMDB_IDS: set[int] = {
     # Comedy
+    270476,  # Widow's Bay
     247767,  # The Studio
     124101,  # Hacks
     136315,  # The Bear
@@ -1129,6 +1151,7 @@ EMMY_WINNER_TMDB_IDS: set[int] = {
     1103,    # Elizabeth R
     3213,    # Marcus Welby M.D.
     # Limited Series
+    206828,  # DTF St. Louis
     249042,  # Adolescence
     154385,  # Beef
     111803,  # The White Lotus
