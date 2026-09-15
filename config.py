@@ -317,6 +317,20 @@ QUALITY_WAIT_TIMEOUT         = float(os.environ.get("QUALITY_WAIT_TIMEOUT", "30"
 # apparent per-key concurrency limit while still allowing good parallelism.
 MDBLIST_CONCURRENCY          = int(os.environ.get("MDBLIST_CONCURRENCY", "3"))
 
+# Max uncached poster renders in flight per worker.  Composite cache hits and
+# requests coalesced onto an in-flight render are never held back — this only
+# gates the pipeline that talks to TMDB / MDBList / TVDB and composites.
+#
+# A catalog grid opening cold can fire 50+ /poster requests in one second, and
+# each render fans out to ~4 upstream calls at its peak (art, logo, rating,
+# trending) before the release-status lookups.  Uncapped, that burst asks the
+# shared httpx pool for several times its connection budget at once, and
+# everything past the budget fails with PoolTimeout rather than waiting its
+# turn.  The per-source caps above (MDBLIST_CONCURRENCY etc.) limit one
+# upstream each; nothing limited the number of renders competing for the pool.
+# 8 renders x ~4 calls fits inside the pool with headroom for background work.
+POSTER_RENDER_CONCURRENCY    = max(1, int(os.environ.get("POSTER_RENDER_CONCURRENCY", "8")))
+
 # -----------------------------------------------------------------------
 # IMDb local ratings dataset — an MDBList-free way to source the "imdb"
 # weight, pulled straight from IMDb's own free, no-key, daily-refreshed

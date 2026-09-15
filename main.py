@@ -223,6 +223,11 @@ _detect_executor:               "ThreadPoolExecutor | None" = None
 _text_detection_inflight:       dict[str, "asyncio.Task[bool | None]"] = {}
 _foreground_detection_count = 0
 _active_poster_renders = 0
+# Admission control for fresh renders (POSTER_RENDER_CONCURRENCY). Cache hits and
+# coalesced waiters bypass it; see _get_render_semaphore(). Created inside the
+# event loop. _renders_queued counts requests parked on it, for /stats.
+_render_semaphore:              "asyncio.Semaphore | None" = None
+_renders_queued = 0
 _background_detection_queue: "asyncio.Queue[_DeferredTextDetection] | None" = None
 _background_detection_keys: set[str] = set()
 _background_detection_task: "asyncio.Task[None] | None" = None
@@ -265,6 +270,24 @@ def _shutdown_detect_executor() -> None:
     if _detect_executor is not None:
         _detect_executor.shutdown(wait=True, cancel_futures=True)
         _detect_executor = None
+
+
+def _get_render_semaphore() -> "asyncio.Semaphore":
+    """Lazily create the render-admission semaphore inside the event loop.
+
+    Bounds how many uncached /poster renders run at once so a burst from a cold
+    catalog grid queues here, in order, instead of oversubscribing the shared
+    HTTP pool and failing with PoolTimeout. Only the render pipeline itself is
+    gated: a composite cache hit returns before this is touched, and a request
+    coalesced onto an in-flight render waits on that render's future, never on a
+    slot of its own. A slot is also not held while waiting on another request's
+    MDBList fetch (the rating-coalescing event), so a holder can never be
+    blocked on a request that is itself queued for a slot.
+    """
+    global _render_semaphore
+    if _render_semaphore is None:
+        _render_semaphore = asyncio.Semaphore(_cfg.POSTER_RENDER_CONCURRENCY)
+    return _render_semaphore
 
 
 def _reserve_foreground_detection() -> None:
@@ -642,16 +665,41 @@ import anime
 # Timeouts are split:
 #   connect=5s  — fail fast when a host is unreachable
 #   read=12s    — allow slow responses from external APIs
-#   pool=5s     — don't block forever waiting for a pool slot
+#   pool=10s    — don't block forever waiting for a pool slot, but do wait:
+#                 a request that queues a few seconds behind a burst still
+#                 renders, one that gives up is a 504 the client may cache
+#
+# The pool is sized from POSTER_RENDER_CONCURRENCY so an operator who raises
+# the render cap doesn't silently reintroduce pool exhaustion: each render
+# fans out to ~4 upstream calls at its peak, and the background loops
+# (quality fetches, TVDB, trending, warm cycles) share the same pool.
 
 _HTTP_CLIENT: httpx.AsyncClient | None = None
 
+# Peak concurrent upstream calls per render (art + logo + rating + trending).
+_HTTP_CALLS_PER_RENDER = 4
+_HTTP_POOL_MIN_CONNECTIONS = 40
+# Connections left for the loops that don't go through /poster: TVDB, trending,
+# digital-release sync, the IMDb dataset refresh.
+_HTTP_POOL_BACKGROUND_HEADROOM = 8
+
+
+def _http_pool_size(render_concurrency: int) -> int:
+    return max(
+        _HTTP_POOL_MIN_CONNECTIONS,
+        render_concurrency * _HTTP_CALLS_PER_RENDER
+        + _cfg.QUALITY_BG_CONCURRENCY
+        + _HTTP_POOL_BACKGROUND_HEADROOM,
+    )
+
+
 def _make_http_client() -> httpx.AsyncClient:
+    _max_connections = _http_pool_size(_cfg.POSTER_RENDER_CONCURRENCY)
     return httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=5.0, read=12.0, write=5.0, pool=5.0),
+        timeout=httpx.Timeout(connect=5.0, read=12.0, write=5.0, pool=10.0),
         limits=httpx.Limits(
-            max_connections=40,
-            max_keepalive_connections=20,
+            max_connections=_max_connections,
+            max_keepalive_connections=max(20, _max_connections // 2),
             keepalive_expiry=30,
         ),
         headers={
@@ -4479,6 +4527,13 @@ async def stats(access_key: str = ""):
         "imdb_dataset": imdb_dataset.status(),
         "runtime": {
             "renders_in_flight":        len(_render_inflight),
+            # Fresh renders holding a slot vs parked waiting for one. A queue
+            # that never drains means POSTER_RENDER_CONCURRENCY is too low for
+            # the machine; a pool of PoolTimeouts with an empty queue means the
+            # HTTP pool, not admission, is the bottleneck.
+            "renders_active":           _active_poster_renders,
+            "renders_queued":           _renders_queued,
+            "render_slots":             _cfg.POSTER_RENDER_CONCURRENCY,
             "quality_fetches_in_flight": len(_quality_bg_inflight),
             "quality_source_backoff_secs": round(_quality_backoff_remaining(now)),
             "rating_fetches_in_flight":  len(_rating_fetch_inflight),
@@ -5392,7 +5447,34 @@ async def get_poster(
         else ""
     )
 
-    global _active_poster_renders
+    # Render admission: everything above was cache lookups and coalescing
+    # bookkeeping; from here on the request talks to upstream APIs and
+    # composites, and only POSTER_RENDER_CONCURRENCY of those run at once.
+    # Released in the finally block below.
+    global _active_poster_renders, _renders_queued
+    _render_sem = _get_render_semaphore()
+    if _render_sem.locked():
+        logger.debug(
+            f"Render for tmdb_id={tmdb_id} queued: "
+            f"{_cfg.POSTER_RENDER_CONCURRENCY} renders already in flight"
+        )
+    _renders_queued += 1
+    try:
+        await _render_sem.acquire()
+    except BaseException as exc:
+        # Cancelled while queued (shutdown, mostly). Nothing has been touched
+        # yet, but the coalescing future was already published and anyone
+        # riding it must not wait forever.
+        if _render_fut is not None and not _render_fut.done():
+            _render_fut.set_exception(exc)
+        if final_cache_key is not None:
+            _render_inflight.pop(final_cache_key, None)
+        if _rating_event_to_set is not None:
+            _rating_event_to_set.set()
+            _rating_fetch_inflight.pop(canonical_id, None)
+        raise
+    finally:
+        _renders_queued -= 1
     _active_poster_renders += 1
     try:
         # True only while we are actually rendering the anime provider's cover
@@ -6624,6 +6706,7 @@ async def get_poster(
         raise HTTPException(status_code=500, detail="Failed to build poster")
     finally:
         _active_poster_renders = max(0, _active_poster_renders - 1)
+        _render_sem.release()
         # Fire the rating event so any coalesced waiters unblock. Under normal
         # operation this was set after cache persistence; this is the safety
         # net for error paths that exit before reaching that point.

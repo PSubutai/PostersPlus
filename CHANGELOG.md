@@ -224,6 +224,19 @@
 - Landscape requests no longer wait for quality data the layout does not render,
   and transient custom-trending failures use a short retry cooldown rather than
   refetching once per poster.
+- A burst of uncached poster requests — a cold catalog or tabbed grid asking
+  for 50+ posters in a second — no longer fails en masse with `PoolTimeout`.
+  Fresh renders now queue behind a per-worker admission cap
+  (`POSTER_RENDER_CONCURRENCY`, default `8`); cache hits and requests coalesced
+  onto an in-flight render are never held back. The upstream connection pool is
+  sized from that cap, and a request waits up to 10 seconds for a connection
+  rather than 5. `/stats` reports `renders_active`, `renders_queued` and
+  `render_slots`.
+- The container no longer accumulates zombie `python3` processes under load.
+  The Docker healthcheck ran through a shell, so a probe that overran its 5s
+  timeout on a busy host left an orphaned `python3` that nothing reaped. The
+  probe now runs without a shell, imports less, and gets 10s; `tini` is PID 1
+  so any orphan is reaped regardless.
 
 ### Configurator
 
