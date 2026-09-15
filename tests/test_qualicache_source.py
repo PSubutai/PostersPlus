@@ -59,11 +59,32 @@ class QualiCacheFetchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.cached, [("tt0068646", ["4K", "REMUX", "DV", "ATMOS"], "1972-03-14")])
 
     async def test_tokens_without_a_postersplus_badge_are_dropped(self):
-        # QualiCache's vocabulary is wider than ours: 8K/BLURAY have no badge.
+        # QualiCache's vocabulary is wider than ours: 8K/720P/HDTV have no
+        # badge and nothing to fold into, so they vanish rather than guess.
         result, _ = await self._fetch(
-            _FakeResponse(200, {"status": "ready", "tokens": ["8K", "BLURAY", "HDR10"]})
+            _FakeResponse(200, {"status": "ready", "tokens": ["8K", "HDTV", "HDR10"]})
         )
         self.assertEqual(result, ["HDR10"])
+        result, _ = await self._fetch(
+            _FakeResponse(200, {"status": "ready", "tokens": ["720P", "WEBDL"]})
+        )
+        self.assertEqual(result, ["WEBDL"])
+
+    async def test_bluray_encode_and_webrip_fold_into_the_web_badge(self):
+        # The badge promises "1080p web-quality or better". A BluRay encode
+        # and a WEBRip both clear that bar, so they render as Web rather than
+        # disappearing; only a true remux keeps the gold badge.
+        for tokens in (["1080P", "BLURAY"], ["1080P", "WEBRIP"]):
+            with self.subTest(tokens=tokens):
+                self.cached.clear()
+                result, _ = await self._fetch(
+                    _FakeResponse(200, {"status": "ready", "tokens": tokens})
+                )
+                self.assertEqual(result, ["1080P", "WEBDL"])
+        result, _ = await self._fetch(
+            _FakeResponse(200, {"status": "ready", "tokens": ["1080P", "REMUX"]})
+        )
+        self.assertEqual(result, ["1080P", "REMUX"])
 
     async def test_empty_is_an_authoritative_no_result_and_is_cached(self):
         result, _ = await self._fetch(_FakeResponse(200, {"status": "empty", "tokens": []}))
@@ -237,9 +258,9 @@ class QualityCacheContextTests(unittest.TestCase):
     def test_qualicache_minimum_trust_is_part_of_cache_policy(self):
         main._cfg.QUALITY_SOURCE = "qualicache"
         main._cfg.QUALICACHE_MIN_TRUST = "high"
-        self.assertEqual(cache._quality_cache_context(), "qualicache:high")
+        self.assertEqual(cache._quality_cache_context(), "qualicache:high:fold1")
         main._cfg.QUALICACHE_MIN_TRUST = "low"
-        self.assertEqual(cache._quality_cache_context(), "qualicache:low")
+        self.assertEqual(cache._quality_cache_context(), "qualicache:low:fold1")
 
 
 class QualityPendingBackoffTests(unittest.IsolatedAsyncioTestCase):

@@ -387,6 +387,13 @@ async def fetch_quality_from_scraper(
 
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
+# QualiCache names more sources than PostersPlus has badges for. The badge set
+# only ever promised "1080p web-quality or better": a WEBRip and a BluRay
+# *encode* both meet that bar, so they fold into the silver Web badge, and only
+# a true remux keeps the gold one. Sub-1080p resolutions (720P, SD) and HDTV
+# are still dropped — nothing below that bar was meant to display.
+_QUALICACHE_TOKEN_FOLD = {"WEBRIP": "WEBDL", "BLURAY": "WEBDL"}
+
 
 def _normalize_qualicache_url(url: str) -> str:
     """Normalise a QualiCache origin and discard pasted endpoint parameters."""
@@ -491,9 +498,13 @@ async def fetch_quality_from_qualicache(
 
         # QualiCache emits the same token vocabulary PostersPlus uses, plus a
         # few we have no badge for (8K, 1440P, 720P, SD, BLURAY, WEBRIP, HDTV).
-        # Drop the ones we can't render rather than guessing an equivalent.
+        # Sources with a close-enough badge fold into it (see
+        # _QUALICACHE_TOKEN_FOLD); the rest are dropped rather than guessed.
         raw_tokens = payload.get("tokens") or []
-        seen = {str(token).upper() for token in raw_tokens}
+        seen = {
+            _QUALICACHE_TOKEN_FOLD.get(token, token)
+            for token in (str(t).upper() for t in raw_tokens)
+        }
         unsupported = sorted(seen - set(QUALITY_LABELS))
         if unsupported:
             logger.debug(

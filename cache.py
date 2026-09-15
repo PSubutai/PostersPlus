@@ -958,7 +958,9 @@ def _quality_cache_context() -> str:
     """Policy identity for cached tokens, without storing credentials."""
     source = _cfg.QUALITY_SOURCE
     if source == "qualicache":
-        return f"qualicache:{_cfg.QUALICACHE_MIN_TRUST}"
+        # The token fold in quality.fetch_quality_from_qualicache is part of the
+        # policy: bump the suffix whenever it changes so stored answers refresh.
+        return f"qualicache:{_cfg.QUALICACHE_MIN_TRUST}:fold1"
     return source if source in ("aiostreams", "scraper") else "aiostreams"
 
 def get_cached_quality(imdb_id: str, release_date: str | None = None) -> list[str] | None:
