@@ -2216,10 +2216,10 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="cfg-sep">
             <span class="group-title">Presentation</span>
             <div class="field">
-              <label class="field-label" data-tip="Sets recommended bar and notch insets for your player. Both stay adjustable.">Primary Client</label>
+              <label class="field-label" data-tip="Sets recommended bar and notch insets for your client. Both stay adjustable.">Primary Client</label>
               <select id="cfg-primary-client" onchange="onPrimaryClientChange()">
-                <option value="stremio_tv_nuvio" selected>Stremio TV, Nuvio, Plex, Jellyfin</option>
-                <option value="stremio_desktop_web">Stremio Desktop/Web</option>
+                <option value="stremio_tv_nuvio" selected>Nuvio TV, Stremio TV, Plex, Jellyfin</option>
+                <option value="stremio_desktop_web">Nuvio Desktop, Nuvio HTPC, Stremio Desktop</option>
               </select>
             </div>
             <div class="field-row">
@@ -5630,74 +5630,74 @@ const _INFO_TITLES = {
 
 const PRESETS = [
   {
-    id: 'prestige_rating_bar',
-    name: 'Prestige Rating Bar',
-    description: 'Classic Posters+ design featuring a score bar using the prestige score palette, which uses grey, bronze and gold. Paired with the info sash and horizontal badge row.',
-    screenshot: '/static/presets/prestige_rating_bar.jpg',
-    params: 'http://postersplus:8000/poster?tmdb_id={tmdb_id}&type={type}&primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=1&score_color_mode=2&accent_bar_font_size_ratio=0.080&accent_bar_y_offset=0.90&accent_bar_append_mode=0&accent_bar_bottom_ratio=0.040&score_glow_threshold=85&score_glow_blur=1&score_glow_alpha=40&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&muted=false&sash_poster_color=false&sash_length_ratio=1.20&sash_height_ratio=0.135&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=5&badge_height=28&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5&top_vignette_sash_only=true',
+    id: 'tinted_mini_notch',
+    name: 'Tinted Minimalist Notch',
+    description: 'Tinted vignette with minimal rating mode displaying the rating color (gold, silver, bronze) genre and year. A matching notch at the top displays interesting information.',
+    screenshot: '/static/presets/preset1.webp',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=medium&top_vignette_sash_only=true&vignette_poster_color_bottom=true&vignette_color_local=false&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=3&minimalist_mode_font_size_ratio=0.060&minimalist_mode_font_x_offset=0.065&rating_text_color=FFFFFF&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.17&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_inset=0.000&sash_badge_font_ratio=0.46&notch_vignette_color=true&badge_display_mode=0',
   },
   {
-    id: 'light_rating_bar',
-    name: 'Light Rating Bar',
-    description: 'Featuring a score bar using a light score palette of red, yellow, green and purple. Info is displayed as a frosted notch at the top of the poster.',
-    screenshot: '/static/presets/light_rating_bar.jpg',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=1&score_color_mode=0&accent_bar_font_size_ratio=0.080&accent_bar_y_offset=0.90&accent_bar_append_mode=0&accent_bar_bottom_ratio=0.040&score_glow_threshold=85&score_glow_blur=1&score_glow_alpha=40&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=notch&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_pad=1.00&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=4&badge_height=20&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5&top_vignette_sash_only=true',
+    id: 'tinted_mini_sash',
+    name: 'Tinted Minimalist Sash',
+    description: 'Tinted vignette with minimal rating mode displaying the rating color (gold, silver, bronze) genre and year. A sash at the top displays interesting information, color matched to sash type.',
+    screenshot: '/static/presets/preset2.webp',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=medium&top_vignette_sash_only=true&vignette_poster_color_bottom=true&vignette_color_local=false&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=3&minimalist_mode_font_size_ratio=0.060&minimalist_mode_font_x_offset=0.065&rating_text_color=FFFFFF&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.17&logo_bottom_anchor=true&sash_length_ratio=1.20&sash_height_ratio=0.135&badge_display_mode=0',
   },
   {
-    id: 'clean_sash',
-    name: 'Clean Sash',
-    description: 'Genre and rating at the bottom in text, quality displayed as an age rating.',
-    screenshot: '/static/presets/clean_sash.jpg',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=2&numeric_score_font_size_ratio=0.100&numeric_score_y_offset=0.90&score_out_of_10=false&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&muted=false&sash_poster_color=false&sash_length_ratio=1.20&sash_height_ratio=0.135&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=1&badge_height=36&badge_anchor_x=0.060&badge_anchor_y=0.055&badge_min_score=2&top_vignette_sash_only=true',
+    id: 'bar_notch',
+    name: 'Bar with matching notch',
+    description: 'Notch and bar sampled from the posters colour, clean and easy to read.',
+    screenshot: '/static/presets/preset3.webp',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=4&frost_reference=true&bar_bottom_inset=0.000&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.17&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_inset=0.000&sash_badge_font_ratio=0.46&badge_display_mode=0',
+  },
+  {
+    id: 'bar_sash',
+    name: 'Bar with matching sash',
+    description: 'Sash and bar sampled from the posters colour, clean and easy to read.',
+    screenshot: '/static/presets/preset4.webp',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=4&frost_reference=true&bar_bottom_inset=0.000&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.17&logo_bottom_anchor=true&sash_poster_color=true&sash_length_ratio=1.20&sash_height_ratio=0.135&badge_display_mode=0',
+  },  
+  {
+    id: 'ratingbar_notch',
+    name: 'Rating Bar with Notch',
+    description: 'The bar at the bottom is colored based on the rating for "at a glance" ratings, along with a notch sampled from the posters colour at the top.',
+    screenshot: '/static/presets/preset5.webp',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&frost_reference=true&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.23&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_inset=0.000&sash_badge_font_ratio=0.46&badge_display_mode=0',
+  },
+  {
+    id: 'ratingbar_sash',
+    name: 'Rating Bar with Sash',
+    description: 'The bar at the bottom is colored based on the rating for "at a glance" ratings, along with a sash colored based on the sash type at the top.',
+    screenshot: '/static/presets/preset6.webp',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&frost_reference=true&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.23&logo_bottom_anchor=true&sash_length_ratio=1.20&sash_height_ratio=0.135&badge_display_mode=0',
   },
   {
     id: 'clean_notch',
     name: 'Clean Notch',
-    description: 'Genre and rating at the bottom in text, with a frosted notch at the top.',
-    screenshot: '/static/presets/clean_notch.jpg',
-    params: 'top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=2&numeric_score_font_size_ratio=0.100&numeric_score_y_offset=0.90&score_out_of_10=false&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&sash_badge=true&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_pad=1.00&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=false&top_vignette_sash_only=true',
-  },  
-  {
-    id: 'mini',
-    name: 'Minimalist',
-    description: 'Very compact mode. The separator color conveys rating using the light palette. In the top left you can find a small notch that reflects the quality.',
-    screenshot: '/static/presets/mini.jpg',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=3&score_color_mode=0&minimalist_append_mode=0&minimalist_mode_font_size_ratio=0.056&minimalist_mode_font_x_offset=0.065&minimalist_mode_font_y_offset=0.920&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&muted=false&sash_poster_color=false&sash_length_ratio=1.15&sash_height_ratio=0.120&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=5&badge_height=28&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5&top_vignette_sash_only=true',
+    description: 'Clear genre and rating text with a notch at the top sampled from the posters colour.',
+    screenshot: '/static/presets/preset7.webp',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=2&frost_reference=true&numeric_score_font_size_ratio=0.090&numeric_score_y_offset=0.91&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.21&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_inset=0.000&sash_badge_font_ratio=0.46&badge_display_mode=0',
   },
   {
-    id: 'frosted_notch',
-    name: 'Frosted',
-    description: 'Both the bar and notch will reflect the poster\'s color, resulting in some beautifully colorful designs. Maintains a low footprint to show off as much of the art as possible.',
-    screenshot: '/static/presets/frosted_notch.jpg',
-    params: 'top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=4&bar_style=frosted&bar_append=rating_year&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&cinema_greyscale=true&release_status_cinema_only=false&sash_badge=true&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_pad=1.00&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&top_vignette_sash_only=true',
+    id: 'clean_sash',
+    name: 'Clean Sash',
+    description: 'Clean genre and rating text with a sash at the top, the colour is based on sash type.',
+    screenshot: '/static/presets/preset8.webp',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=2&frost_reference=true&numeric_score_font_size_ratio=0.090&numeric_score_y_offset=0.91&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.21&logo_bottom_anchor=true&sash_length_ratio=1.20&sash_height_ratio=0.135&badge_display_mode=0',
   },
   {
-    id: 'black_rating_bar_light_notch',
-    name: 'Black Rating Bar',
-    description: 'A black bar displaying genre, rating and year with an adaptive rating bar that uses red, yellow, green and purple.',
-    screenshot: '/static/presets/black_rating_bar_light_notch.jpg',
-    params: 'top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=4&bar_style=rating_black&bar_accent=palette_0&bar_append=rating_year&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&sash_badge=true&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_pad=1.00&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=false&top_vignette_sash_only=true',
+    id: 'mini_sash_oa',
+    name: 'Original Art - Mini & Sash',
+    description: 'Uses the original art mode with a minimal rating and sash that attempt to stay out of the way.',
+    screenshot: '/static/presets/preset9.webp',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=low&bottom_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=3&minimalist_mode_font_size_ratio=0.060&minimalist_mode_font_x_offset=0.065&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&use_original_art=true&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.23&logo_bottom_anchor=true&sash_length_ratio=1.20&sash_height_ratio=0.135&badge_display_mode=0',
   },
   {
-    id: 'black_rating_bar_oa',
-    name: 'Black Rating Bar OA',
-    description: 'Black rating bar that swaps between red, yellow, green and purple based on score. Ideal preset if you enjoy the original art, rather than textless with a logo overlay. Uses very low vignette for maximum brightness.',
-    screenshot: '/static/presets/black_rating_bar_oa.jpg',
-    params: 'top_gradient=off&bottom_gradient=low&fallback_to_imdb=true&rating_display_mode=4&bar_style=rating_black&bar_accent=palette_0&bar_append=rating_year&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=true&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&sash_badge=false&muted=false&sash_length_ratio=1.15&sash_height_ratio=0.120&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=false&top_vignette_sash_only=true',
-  },
-  {
-    id: 'frosted_rating_bar_oa',
-    name: 'Frosted Rating Bar OA',
-    description: 'Frosted bar with a silver rating accent bar. Displays the genre, info sash and rating in one place while taking up the least amount of space. Uses the original art with very low vignette for maximum brightness.',
-    screenshot: '/static/presets/frosted_rating_bar_oa.jpg',
-    params: 'top_gradient=off&bottom_gradient=low&fallback_to_imdb=true&rating_display_mode=4&bar_style=rating_frosted&bar_accent=silver&bar_append=sash&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=true&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=false&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=false&top_vignette_sash_only=true',
-  },
-  {
-    id: 'mini_oa',
-    name: 'Minimalist OA',
-    description: 'Minimalist mode and sash allow maximum compatibility with busy original art posters. The separator color conveys the approximate rating.',
-    screenshot: '/static/presets/mini_oa.jpg',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=3&score_color_mode=0&minimalist_append_mode=0&minimalist_mode_font_size_ratio=0.056&minimalist_mode_font_x_offset=0.065&minimalist_mode_font_y_offset=0.920&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=true&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&muted=false&sash_poster_color=false&sash_length_ratio=1.15&sash_height_ratio=0.120&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&top_vignette_sash_only=true',
+    id: 'bar_notch_oa',
+    name: 'Original Art - Bar & Notch',
+    description: 'Uses the original art mode with a bar rating and notch that attempt to stay out of the way.',
+    screenshot: '/static/presets/preset10.webp',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=low&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=4&frost_reference=true&bar_bottom_inset=0.000&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&use_original_art=true&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.23&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_inset=0.000&sash_badge_font_ratio=0.46&badge_display_mode=0',
   },
 ];
 
@@ -5941,12 +5941,11 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
 
   // ── Sash ────────────────────────────────────────────────────────────────
   if (p.has('sash_poster_color')) _setEl('tog-sash-poster-color', p.get('sash_poster_color'));
-  if (p.has('sash_text_color')) {
-    const _stcVal = p.get('sash_text_color').replace('#', '').toUpperCase();
+  { // Same as rating_text_color: absent means default, so clear it.
+    const _stcVal = p.has('sash_text_color') ? p.get('sash_text_color').replace('#', '').toUpperCase() : '';
     document.getElementById('cfg-sash-text-color').value = _stcVal;
     if (/^[0-9A-F]{6}$/.test(_stcVal))
-      document.getElementById('cfg-sash-text-color-picker').value = '#' + _stcVal;
-  }
+      document.getElementById('cfg-sash-text-color-picker').value = '#' + _stcVal; }
   if (p.has('sash_winner_star')) _setEl('tog-sash-winner-star',  p.get('sash_winner_star'));
   if (p.has('cinema_greyscale')) _setEl('tog-cinema-greyscale', p.get('cinema_greyscale'));
   if (p.has('cinema_greyscale_skip_if_available')) _setEl('tog-cinema-greyscale-skip', p.get('cinema_greyscale_skip_if_available'));
@@ -6046,9 +6045,10 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
     updateGlowColorField(); }
   if (p.has('score_color_mode'))               _setEl('cfg-score-color-mode', p.get('score_color_mode'));
   if (p.has('score_custom_palette'))           _setEl('cfg-score-custom-palette', p.get('score_custom_palette'));
-  if (p.has('rating_text_color')) {
-    _setAllRtc(p.get('rating_text_color').replace('#', '').toUpperCase());
-  }
+  // The server default is None, so the fill-in loop above never sets this
+  // key; an absent parameter has to clear the field explicitly or a stale
+  // colour (e.g. FFFFFF left over from a preset) survives every reload.
+  _setAllRtc(p.has('rating_text_color') ? p.get('rating_text_color').replace('#', '').toUpperCase() : '');
   updateRatingFields();
   updateOriginalArt();
 
@@ -6161,12 +6161,20 @@ function restoreSettings() {
 // drifts when the HTML defaults change between versions — the symptom
 // users see is "sliders went crazy after rebuild, had to click Reset".
 //
-// Only cfg-* and tog-* controls are touched.  Text and hidden inputs
-// are deliberately skipped — those are user-owned (API keys, search
-// query) or hydrated separately (resolved IDs, domain).
+// Only cfg-* and tog-* controls are touched.  Hidden inputs and the
+// user-owned text inputs (API keys, search query) are deliberately
+// skipped — those are hydrated separately from localStorage / resolved
+// IDs.  The remaining text inputs are hex colour boxes, which are
+// settings like any other and would otherwise carry a stale colour
+// (e.g. FFFFFF from a preset) across the rebuild.
+const _USER_OWNED_TEXT = new Set(['cfg-tmdb-key', 'cfg-mdblist-key', 'cfg-search-query']);
 function _resetFormToDefaults() {
   document.querySelectorAll('[id^="cfg-"],[id^="tog-"]').forEach(el => {
-    if (el.type === 'range' || el.type === 'number') {
+    if (el.type === 'text' && !_USER_OWNED_TEXT.has(el.id)) {
+      el.value = el.defaultValue;
+    } else if (el.type === 'color') {
+      el.value = el.defaultValue;
+    } else if (el.type === 'range' || el.type === 'number') {
       el.value = el.defaultValue;
       // Don't dispatchEvent — would cascade into build()/queuePreviewReload()
       // mid-init.  The range-display setup loop below picks up the new value.
