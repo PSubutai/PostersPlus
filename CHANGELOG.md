@@ -1,6 +1,32 @@
 # Changelog
 
-## Unreleased
+## v1.2.0 - 2026-09-20
+
+This release is compared with `v1.1.0`.
+
+### Highlights
+
+- Added anime-native poster requests through AniList and Kitsu, with separate
+  anime rating weights for MyAnimeList, AniList and Kitsu scores.
+- Added a 16:9 landscape poster layout, poster-coloured vignettes, and frosted
+  elements that match the painted vignette colour.
+- Made IMDb ids optional: `tmdb_id` is the identity, so titles TMDB has no IMDb
+  link for now render with ratings and sashes instead of failing.
+- Added QualiCache as a quality source, so poster rendering answers from a
+  shared cache instead of waiting on a scrape.
+- Added MDBList-free rating inputs: TMDB's own vote average and IMDb's daily
+  dataset, each usable as the primary source or as a fallback when MDBList has
+  no value.
+- Added background cache warming for trending, popular, and custom-catalog
+  titles, with quota-aware MDBList spending, plus custom trending sources.
+- Fixed festival sashes naming a top prize the film did not win; top prizes are
+  now checked against Wikidata-built lists verified edition by edition.
+- Redesigned the configurator with new presets, row tooltips, a title-link
+  menu, and generated URLs about a third of their previous length.
+- Hardened the server for cold-catalog bursts: fresh renders queue behind an
+  admission cap, and the healthcheck no longer leaves zombie processes.
+- Added Brazilian Portuguese translations and translated the remaining sash
+  vocabulary in every shipped language.
 
 ### Anime
 
@@ -86,9 +112,12 @@
   The poster is served without badges and the composite isn't cached, so a later
   request picks the badges up — and a cold title no longer counts against the
   quality source's failure budget the way a real outage does.
-- QualiCache tokens with no PostersPlus badge (`8K`, `1440P`, `720P`, `SD`,
-  `BLURAY`, `WEBRIP`, `HDTV`) are dropped rather than mapped to an approximate
-  equivalent.
+- QualiCache `BLURAY` and `WEBRIP` answers now fold into the silver Web badge.
+  Older shows whose best trusted release is an encode rather than a remux or
+  WEB-DL (*Lost*, *Futurama*) previously showed no quality badge at all, since
+  the source token was dropped and a resolution alone is never drawn. Only a
+  true remux keeps gold. Tokens with no PostersPlus equivalent (`8K`, `1440P`,
+  `720P`, `SD`, `HDTV`) are still dropped rather than approximated.
 - Quality backend selection now runs through one dispatcher instead of being
   repeated at each call site. `/status` reports the active backend as
   `quality_source`.
@@ -193,6 +222,11 @@
   warming reuses the trending snapshot it already fetched.
 - Rating-provider failure counters are now pruned together with their expired
   backoff state.
+- Renamed the award sash labels so winners and nominees no longer share the
+  same text: "Best Picture" / "Golden Globe" became "Oscar Winner" / "Oscar
+  Nominee" and "Globe Winner" / "Globe Nominee", in every shipped language.
+  A new `sash_winner_star` toggle prefixes winners with a star, replacing the
+  old heuristic that guessed from the shared label.
 - Fixed movies wearing TV awards. TMDB movie and TV ids are separate
   namespaces, but the Emmy and Golden Globe id lists were searched as one, so
   *Back to the Future* (movie/105) inherited *Sex and the City*'s Emmy and
@@ -232,6 +266,18 @@
   sized from that cap, and a request waits up to 10 seconds for a connection
   rather than 5. `/stats` reports `renders_active`, `renders_queued` and
   `render_slots`.
+- Cache warming no longer drains a free MDBList key's daily quota. MDBList's
+  limit is 1,000 requests per key per day (more on paid tiers), not a burst
+  limit, and the default `CACHE_WARM_MDBLIST_BUDGET` of 500 took half of it in
+  one cycle — leaving live poster requests to 429 for the rest of the day.
+  Every MDBList response reports the remaining quota, and the warmer now
+  reads it: it stops spending a key once its remaining requests fall to
+  `CACHE_WARM_MDBLIST_RESERVE` (default `300`), moving to `MDBLIST_API_KEY_2`
+  when that key still has room, and never drags live traffic off a key that
+  is merely at its reserve. A quota 429, which carries no `Retry-After`, now
+  parks the key until MDBList's own reset time instead of retrying hourly
+  against a key that is dead until midnight UTC. `/stats` reports each key's
+  `daily_limit`, `daily_remaining` and `quota_reset_at`.
 - The container no longer accumulates zombie `python3` processes under load.
   The Docker healthcheck ran through a shell, so a probe that overran its 5s
   timeout on a busy host left an orphaned `python3` that nothing reaped. The
@@ -254,6 +300,13 @@
 - The defaults the configurator omits are read from the server at load time
   rather than restated in the page, so they cannot drift apart. If the server
   cannot be reached the full-length URL is generated instead.
+- Replaced the ten shipped presets with a new set — tinted minimalist,
+  colour-matched bar/notch/sash, and rating-bar variants — with WebP
+  screenshots.
+- Fixed a rating or sash text colour that, once typed, came back after every
+  container rebuild even after being cleared. The reset-on-load skipped hex
+  text boxes and an imported URL that omitted the parameter left the old value
+  in place; both now clear to the server default.
 
 ### Fixes And Documentation
 
@@ -294,6 +347,7 @@
 - Fixed landscape fallbacks losing their title, TV shows retaining a stale
   ended status after revival, and release sashes surviving past a newly reached
   digital-release boundary.
+- Added the 78th Emmy (2026) winners and nominees to the award sash data.
 - Split the oversized `.env.example` into a concise starter configuration and a
   new `ADVANCED.md` tuning reference. Added previously undocumented OCR and face
   model path overrides and corrected OCR concurrency guidance and defaults.

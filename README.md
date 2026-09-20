@@ -129,7 +129,7 @@ All configuration is done via environment variables. Copy `.env.example` to `.en
 |---|---|---|
 | `TMDB_API_KEY` | - | TMDB API key for poster/metadata fetching |
 | `MDBLIST_API_KEY` | - | MDBList API key for ratings and award data |
-| `MDBLIST_API_KEY_2` | - | Optional second MDBList key. Retried in the same request when the primary key is rate-limited |
+| `MDBLIST_API_KEY_2` | - | Optional second MDBList key. Retried in the same request when the primary key is rate-limited (a key that has spent its daily quota stays parked until MDBList's reset) |
 | `MDBLIST_CONCURRENCY` | `3` | Maximum concurrent outbound MDBList requests per worker |
 | `TVDB_API_KEY` | - | Optional TheTVDB v4 API key. When set, TVDB is used as a *fallback* art source (logos, backdrops, optionally posters) for titles where TMDB returns nothing usable — reducing fallbacks to text titles / genre canvas. Leave blank to disable entirely |
 | `TVDB_SUBSCRIBER_PIN` | - | Only required for user-supported ("subscriber") TVDB keys; leave blank for company keys |
@@ -516,6 +516,7 @@ An optional background task that proactively populates the TMDB metadata/image/l
 | `CACHE_WARM_ENABLED` | `false` | Master switch for the background warm cycle |
 | `CACHE_WARM_TMDB_BUDGET` | `2000` | Ceiling on TMDB metadata/image API calls per cycle. Cache hits are free and don't count against it |
 | `CACHE_WARM_MDBLIST_BUDGET` | `500` | Ceiling on MDBList rating/award API calls per cycle |
+| `CACHE_WARM_MDBLIST_RESERVE` | `300` | MDBList's limit is a per-key *daily* quota (1,000/day on a free key) shared with live poster requests. The warmer stops spending a key once its remaining daily requests (reported by MDBList on every response) fall to this floor, so a cycle can't leave the rest of the day without ratings. `0` disables the floor |
 | `CACHE_WARM_INTERVAL_HOURS` | `24` | Hours between the end of one cycle and the start of the next (ignored once `CACHE_WARM_AT_HOUR` is set, after the first cycle) |
 | `CACHE_WARM_AT_HOUR` | - | Optional fixed local hour (e.g. `4` or `4:30`) to align steady-state cycles to, instead of running exactly `CACHE_WARM_INTERVAL_HOURS` after the previous cycle. Useful for scheduling the OCR-heavy cycle off-peak. Uses the container's `TZ` (UTC if unset). The very first cycle after startup always runs shortly after boot regardless |
 | `CACHE_WARM_QUALITY_ENABLED` | `false` | Also pre-fetch quality-badge data (resolution/source/HDR tokens) for every warmed title via your configured quality source. **Warning:** against a public Stremio scraper addon (rather than your own self-hosted instance) this volume of traffic can get your server's IP rate-limited or blocked — only enable against your own AIOStreams/scraper instance |

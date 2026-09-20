@@ -37,14 +37,20 @@ class _RateLimited:
     provided one, so the caller can honour it instead of the default fixed
     back-off. Always distinct from FETCH_FAILED so the standard retry path
     skips immediate re-attempts (retrying a 429 is counterproductive).
-    """
-    __slots__ = ("retry_after",)
 
-    def __init__(self, retry_after: float | None = None):
+    *reset_at* is the epoch second the key's daily quota rolls over, taken
+    from MDBList's X-RateLimit-Reset header. A quota-exhausted 429 comes
+    without Retry-After, so this is what tells the caller how long the key
+    is actually dead for.
+    """
+    __slots__ = ("retry_after", "reset_at")
+
+    def __init__(self, retry_after: float | None = None, reset_at: float | None = None):
         self.retry_after = retry_after
+        self.reset_at = reset_at
 
     def __repr__(self):
-        return f"RATE_LIMITED(retry_after={self.retry_after})"
+        return f"RATE_LIMITED(retry_after={self.retry_after}, reset_at={self.reset_at})"
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 #ratings.py
 import logging
 import math
+import time
 import httpx
 import numpy as np
 
@@ -29,6 +30,76 @@ from config import (
 
 
 _RATING_VOTE_KEYS = ("vote_count", "votes", "count", "rating_count", "ratings_count")
+
+
+# ---------------------------------------------------------------------------
+# MDBList daily quota tracking
+# ---------------------------------------------------------------------------
+# MDBList's limit is a per-key *daily* request quota (1000/day on the free
+# tier, more on paid tiers), not a burst limit, and every response reports it:
+#
+#   x-ratelimit-limit: 1000
+#   x-ratelimit-remaining: 647
+#   x-ratelimit-reset: 1789948800     (epoch seconds, midnight UTC)
+#
+# Each fetch_rating call refreshes the snapshot for the key it used, so the
+# cache warmer can stop spending the key before live traffic runs dry, and a
+# quota 429 (which comes with no Retry-After) can cool the key down until the
+# real reset instead of guessing.
+
+class MDBListQuota:
+    __slots__ = ("limit", "remaining", "reset_at", "observed_at")
+
+    def __init__(self, limit: int | None, remaining: int | None, reset_at: float | None, observed_at: float):
+        self.limit       = limit
+        self.remaining   = remaining
+        self.reset_at    = reset_at
+        self.observed_at = observed_at
+
+    def is_current(self, now: float | None = None) -> bool:
+        """False once the quota window this snapshot describes has rolled over."""
+        if self.reset_at is None:
+            return True
+        if now is None:
+            now = time.time()
+        return now < self.reset_at
+
+    def __repr__(self):
+        return f"MDBListQuota(limit={self.limit}, remaining={self.remaining}, reset_at={self.reset_at})"
+
+
+# api key -> latest quota snapshot seen for it
+MDBLIST_QUOTA: dict[str, MDBListQuota] = {}
+
+
+def _header_int(headers, name: str) -> int | None:
+    raw = headers.get(name)
+    if raw is None:
+        return None
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_mdblist_quota(mdblist_key: str, headers) -> MDBListQuota | None:
+    """Refresh the per-key quota snapshot from a response's X-RateLimit-* headers."""
+    limit     = _header_int(headers, "x-ratelimit-limit")
+    remaining = _header_int(headers, "x-ratelimit-remaining")
+    reset_raw = _header_int(headers, "x-ratelimit-reset")
+    if limit is None and remaining is None and reset_raw is None:
+        return None
+    quota = MDBListQuota(limit, remaining, float(reset_raw) if reset_raw else None, time.time())
+    MDBLIST_QUOTA[mdblist_key] = quota
+    return quota
+
+
+def mdblist_quota_remaining(mdblist_key: str, now: float | None = None) -> int | None:
+    """Remaining daily requests for *mdblist_key*, or None when unknown / stale."""
+    quota = MDBLIST_QUOTA.get(mdblist_key)
+    if quota is None or quota.remaining is None or not quota.is_current(now):
+        return None
+    return quota.remaining
 
 
 def _rating_vote_count(raw: dict) -> int | None:
@@ -94,6 +165,8 @@ async def fetch_rating(
         logger.error(f"MDblist request error for {media_id}: {type(exc).__name__}: {exc}")
         return FETCH_FAILED
 
+    quota = _record_mdblist_quota(mdblist_key, resp.headers)
+
     if resp.status_code == 429:
         retry_after: float | None = None
         raw = resp.headers.get("retry-after")
@@ -107,10 +180,17 @@ async def fetch_rating(
                     retry_after = parsed
             except ValueError:
                 pass
+        # Only treat the 429 as quota exhaustion when MDBList says the key is
+        # actually empty; a 429 with requests still remaining is some other
+        # throttle, and parking the key until midnight for it would be wrong.
+        reset_at = None
+        if quota and quota.reset_at and (quota.remaining is None or quota.remaining <= 0):
+            reset_at = quota.reset_at
         logger.warning(
-            f"MDblist rate-limited for {media_id} (retry-after={retry_after})"
+            f"MDblist rate-limited for {media_id} "
+            f"(retry-after={retry_after}, quota={quota})"
         )
-        return _RateLimited(retry_after)
+        return _RateLimited(retry_after, reset_at=reset_at)
 
     if resp.status_code == 404:
         logger.info(f"MDblist 404 for {provider}/{media_id} — title not found, returning empty result")

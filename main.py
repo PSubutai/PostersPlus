@@ -206,7 +206,8 @@ _quality_source_fail_count: dict[str, int] = {}
 # _rating_backoff: maps (imdb_id, API key) -> loop-time after which a new
 #   attempt is allowed. Scoping by key lets a rotated or replaced key retry
 #   the same title immediately. Network failures use an escalating ladder
-#   (30s/2m/8m/1h); rate-limit responses use Retry-After or 1h flat.
+#   (30s/2m/8m/1h); rate-limit responses use Retry-After, else the key's
+#   daily-quota reset (X-RateLimit-Reset), else 1h flat.
 
 _rating_fetch_inflight:         dict[str, asyncio.Event] = {}
 _rating_backoff:                dict[tuple[str, str], float] = {}
@@ -530,15 +531,49 @@ def _mdblist_server_key_label(key: str | None) -> str:
 def _mark_mdblist_rate_limit(
     canonical_id: str, key: str, result
 ) -> tuple[float, str | None]:
-    """Cool down a rate-limited key and select a healthy configured fallback."""
+    """Cool down a rate-limited key and select a healthy configured fallback.
+
+    MDBList's limit is a daily quota, and a quota 429 carries no Retry-After —
+    only X-RateLimit-Reset. Retrying hourly until then just burns log lines,
+    so the key sleeps until the reset (capped at a day in case the header is
+    nonsense) and the fallback key takes over meanwhile.
+    """
+    reset_at = getattr(result, "reset_at", None)
     if result.retry_after:
         backoff_secs = min(float(result.retry_after), 3600.0)
+    elif reset_at:
+        backoff_secs = min(max(float(reset_at) - time.time(), 60.0), 86400.0)
     else:
         backoff_secs = 3600.0
     now = asyncio.get_running_loop().time()
     _mdblist_key_cooldown[key] = now + backoff_secs
     _rating_backoff[_rating_retry_key(canonical_id, key)] = now + backoff_secs
     return backoff_secs, _next_mdblist_server_key(key, now)
+
+
+def _warm_mdblist_key_with_quota(current_key: str, now: float, reserve: int) -> str | None:
+    """
+    Pick a configured key the cache warmer may still spend: not cooling down,
+    and with unknown or above-reserve daily quota. Tries *current_key* first,
+    then its siblings in order.
+
+    Deliberately does not touch _mdblist_active_key_idx: a key at the reserve
+    floor is fine for live requests (that is what the reserve is for), so the
+    warmer moving on to a sibling must not drag live traffic along with it.
+    """
+    keys = _cfg.SERVER_MDBLIST_KEYS
+    if current_key not in keys:
+        return current_key if now >= _mdblist_key_cooldown.get(current_key, 0.0) else None
+    start = keys.index(current_key)
+    for offset in range(len(keys)):
+        candidate = keys[(start + offset) % len(keys)]
+        if now < _mdblist_key_cooldown.get(candidate, 0.0):
+            continue
+        remaining = mdblist_quota_remaining(candidate)
+        if remaining is not None and remaining <= reserve:
+            continue
+        return candidate
+    return None
 
 
 async def _background_quality_fetch(
@@ -630,11 +665,13 @@ from quality import (
 )
 from ratings import (
     CustomScorePalette,
+    MDBLIST_QUOTA,
     calculate_weighted_score,
     draw_frosted_bar,
     draw_score_bar,
     fetch_rating,
     is_anime_rated,
+    mdblist_quota_remaining,
     parse_custom_score_palette,
     score_color_for_mode,
     _draw_solid_pip,
@@ -3794,6 +3831,32 @@ async def _run_cache_warm_cycle(client: httpx.AsyncClient) -> None:
         if get_cached_rating(warm_canonical_id) is not None:
             continue  # rating already fresh — nothing to do
 
+        # The quota is per day, not per second, and the warmer shares it with
+        # real requests. Stop spending a key before it is drained so the rest
+        # of the day still renders ratings — on a free key (1000/day) the
+        # default budget alone would otherwise take half the quota in one
+        # cycle. A key live traffic has already put on cooldown is skipped the
+        # same way. When a sibling key still has room, warming moves to it.
+        _warm_now = asyncio.get_running_loop().time()
+        _warm_key = _warm_mdblist_key_with_quota(
+            effective_mdblist_key, _warm_now, _cfg.CACHE_WARM_MDBLIST_RESERVE
+        )
+        if _warm_key is None:
+            logger.info(
+                f"Cache warm: no MDBList key with quota above the reserve "
+                f"({_cfg.CACHE_WARM_MDBLIST_RESERVE}) or off cooldown — "
+                f"stopping MDBList warming for this cycle after {mdblist_calls} calls"
+            )
+            mdblist_budget = mdblist_calls
+            continue
+        if _warm_key != effective_mdblist_key:
+            logger.info(
+                f"Cache warm: MDBList {_mdblist_server_key_label(effective_mdblist_key)} at its "
+                f"quota reserve or cooling down — warming continues on "
+                f"{_mdblist_server_key_label(_warm_key)}"
+            )
+            effective_mdblist_key = _warm_key
+
         await asyncio.sleep(0.25)
 
         async def _fetch_rating_warm(_key: str):
@@ -3850,10 +3913,15 @@ async def _run_cache_warm_cycle(client: httpx.AsyncClient) -> None:
     if _pending_detections:
         await asyncio.gather(*_pending_detections, return_exceptions=True)
 
+    _quota_note = ""
+    if effective_mdblist_key:
+        _quota_left = mdblist_quota_remaining(effective_mdblist_key)
+        if _quota_left is not None:
+            _quota_note = f", {_quota_left} MDBList daily requests left on the active key"
     logger.info(
         f"Cache warm: cycle complete — {titles_seen} titles processed, "
         f"{tmdb_calls} TMDB calls, {mdblist_calls} MDBList calls, "
-        f"{quality_calls} quality calls, {detection_calls} text-detection scans"
+        f"{quality_calls} quality calls, {detection_calls} text-detection scans{_quota_note}"
     )
 
 
@@ -4512,11 +4580,17 @@ async def stats(access_key: str = ""):
     mdblist_keys = []
     for i, k in enumerate(keys):
         cd = _mdblist_key_cooldown.get(k, 0.0)
+        quota = MDBLIST_QUOTA.get(k)
         mdblist_keys.append({
             "index":         i + 1,
             "active":        i == (_mdblist_active_key_idx % len(keys)),
             "cooling_down":  now < cd,
             "cooldown_secs": max(0, round(cd - now)),
+            # Daily quota as last reported by MDBList; None until the key has
+            # made a request this window.
+            "daily_limit":     quota.limit if quota and quota.is_current() else None,
+            "daily_remaining": mdblist_quota_remaining(k),
+            "quota_reset_at":  quota.reset_at if quota and quota.is_current() else None,
         })
 
     return {

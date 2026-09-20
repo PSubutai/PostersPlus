@@ -2103,7 +2103,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
       <div class="notch"></div>
       <div class="panel-header">
         <span class="panel-title">Configuration</span>
-        <button type="button" class="panel-index whatsnew-version" id="whatsnew-version" onclick="openWhatsNew()" data-acked="true" title="What's new">v1.2-dev</button>
+        <button type="button" class="panel-index whatsnew-version" id="whatsnew-version" onclick="openWhatsNew()" data-acked="true" title="What's new">v1.2.0</button>
       </div>
       <div class="panel-body">
 
@@ -3302,11 +3302,18 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
     <div class="import-modal-title">What's new</div>
     <div class="whatsnew-body">
       <div>
-        <div class="whatsnew-section-title">v1.2-dev</div>
+        <div class="whatsnew-section-title">v1.2.0</div>
         <ul class="whatsnew-list">
-          <li>Award sash labels are now clearer: "Globe Winner" / "Globe Nominee" replace the ambiguous "Golden Globe" label, matching the Oscar/Emmy naming pattern</li>
-          <li>New toggle to show a star icon instead of win/nominee text on award sashes</li>
-          <li>Background cache pre-warming: proactively refreshes posters, logos, and metadata for trending/popular titles ahead of requests, with configurable TMDB/MDBList budgets and an optional (off by default) quality-badge pre-fetch for self-hosted instances</li>
+          <li>Anime-native posters through AniList and Kitsu, with separate anime rating weights on the Weights tab</li>
+          <li>New 16:9 landscape layout, poster-coloured vignettes, and frosted bars and notches that match the vignette tint</li>
+          <li>IMDb ids are optional: titles TMDB has no IMDb link for now render with ratings and sashes instead of failing</li>
+          <li>QualiCache quality source, and BluRay/WEBRip answers now show the Web badge instead of nothing</li>
+          <li>MDBList-free rating inputs: TMDB's own score and the IMDb dataset, as a primary source or a fallback when MDBList has no value</li>
+          <li>Background cache warming for trending, popular, and custom-catalog titles, now quota-aware so a free MDBList key isn't drained in one cycle</li>
+          <li>Festival sashes only name a top prize the film actually won, checked against verified winner lists</li>
+          <li>Award sash labels read "Globe Winner" / "Globe Nominee", with an optional star icon in place of the text; 78th Emmy winners added</li>
+          <li>Ten new presets, row tooltips, a title-link menu, and generated URLs about a third as long</li>
+          <li>Brazilian Portuguese translations, and the remaining sash vocabulary translated in every language</li>
         </ul>
       </div>
       <div>
@@ -5783,7 +5790,7 @@ function applyImport() {
 // Bump WHATS_NEW_VERSION whenever the modal content changes — existing users
 // will see the unread dot on the chip until they open and acknowledge it.
 // The chip itself stays visible so users can re-open the list whenever.
-const WHATS_NEW_VERSION = '1.2-dev';
+const WHATS_NEW_VERSION = '1.2.0';
 
 function openWhatsNew() {
   document.getElementById('whatsnew-modal').classList.add('open');

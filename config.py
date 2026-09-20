@@ -359,6 +359,12 @@ IMDB_DATASET_MIN_VOTES       = max(0, int(os.environ.get("IMDB_DATASET_MIN_VOTES
 CACHE_WARM_ENABLED           = os.environ.get("CACHE_WARM_ENABLED", "false").strip().lower() == "true"
 CACHE_WARM_TMDB_BUDGET       = int(os.environ.get("CACHE_WARM_TMDB_BUDGET", "2000"))
 CACHE_WARM_MDBLIST_BUDGET    = int(os.environ.get("CACHE_WARM_MDBLIST_BUDGET", "500"))
+# MDBList's limit is a per-key daily quota (1000/day free) shared with live
+# poster requests, and every response reports what's left. The warmer stops
+# spending a key once its remaining daily requests fall to this floor, so a
+# cycle can't leave the rest of the day rendering without ratings. 0 disables
+# the floor (budget only).
+CACHE_WARM_MDBLIST_RESERVE   = max(0, int(os.environ.get("CACHE_WARM_MDBLIST_RESERVE", "300")))
 CACHE_WARM_INTERVAL_HOURS    = float(os.environ.get("CACHE_WARM_INTERVAL_HOURS", "24"))
 
 # Optionally align steady-state cache-warm cycles to a fixed local hour of day
