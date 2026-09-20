@@ -9,7 +9,7 @@ Those not self-hosting can [visit the public instance.](https://postersplus.elfh
 ## Showcase
 <p align="center">
   Various presets showcased within Nuvio HTPC. Click for full resolution.
-  <img src="Showcase/showcase.webp?raw=true" width="92%"/>
+  <img src="Showcase/showcase.webp" width="100%"/>
 </p>
 
 ## Features
