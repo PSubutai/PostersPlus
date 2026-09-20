@@ -8,27 +8,9 @@ Those not self-hosting can [visit the public instance.](https://postersplus.elfh
 
 ## Showcase
 <p align="center">
-  <img src="Showcase/frosted_notch.jpg?raw=true" width="23%"/>
-  <img src="Showcase/clean_sash.png?raw=true" width="23%"/>
-  <img src="Showcase/rating_bar.jpg?raw=true" width="23%"/>
-  <img src="Showcase/mini_sash.jpg?raw=true" width="23%"/>
-  <img src="Showcase/bar_rating_notch.jpg?raw=true" width="23%"/>
-  <img src="Showcase/clean_notch.jpg?raw=true" width="23%"/>
-  <img src="Showcase/rating_bar_notch.jpg?raw=true" width="23%"/>
-  <img src="Showcase/mini_original_art.jpg?raw=true" width="23%"/>
-  <img src="Showcase/bar_rating_notch_silver.jpg?raw=true" width="23%"/>
-  <img src="Showcase/bar_rating_notch_gold.jpg?raw=true" width="23%"/>
-  <img src="Showcase/bar_rating_sash_original_art.jpg?raw=true" width="23%"/>
-  <img src="Showcase/mini_lowlogo_cinema.jpg?raw=true" width="23%"/>
+  Various presets showcased within Nuvio HTPC. Click for full resolution.
+  <img src="Showcase/showcase.webp?raw=true" width="92%"/>
 </p>
-<p align="center">
-  Client featured is a slightly modified Stremio Kai by allecsc
-</p>
-<p align="center">
-  <img src="Showcase/frosted_kai_large.png?raw=true" width="92%"/>
-</p>
-
----
 
 ## Features
 
