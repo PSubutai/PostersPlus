@@ -13,6 +13,7 @@ Those not self-hosting can [visit the public instance.](https://postersplus.elfh
   </a>
     Various presets showcased within
   <a href="https://github.com/UmbraProjects/NuvioDesktop">Nuvio HTPC</a>
+    - best viewed in its own tab for maximum resolution.
   <br></br>
 </p>
 
