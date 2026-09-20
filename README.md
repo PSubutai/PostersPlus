@@ -8,12 +8,12 @@ Those not self-hosting can [visit the public instance.](https://postersplus.elfh
 
 <p align="center">
 
-  <a href="Showcase/showcase.webp">
+  <a href="https://raw.githubusercontent.com/UmbraProjects/PostersPlus/refs/heads/dev/Showcase/showcase.webp">
     <img src="Showcase/showcase.webp" width="100%" alt="Nuvio HTPC presets"/>
   </a>
     Various presets showcased within
   <a href="https://github.com/UmbraProjects/NuvioDesktop">Nuvio HTPC</a>
-    - best viewed in its own tab for maximum resolution.
+    - click for maximum resolution.
   <br></br>
 </p>
 
