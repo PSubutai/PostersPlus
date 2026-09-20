@@ -6,10 +6,14 @@ Those not self-hosting can [visit the public instance.](https://postersplus.elfh
 
 ---
 
-## Showcase
 <p align="center">
-  Various presets showcased within Nuvio HTPC. Click for full resolution.
-  <img src="Showcase/showcase.webp" width="100%"/>
+
+  <a href="Showcase/showcase.webp">
+    <img src="Showcase/showcase.webp" width="100%" alt="Nuvio HTPC presets"/>
+  </a>
+    Various presets showcased within
+  <a href="https://github.com/UmbraProjects/NuvioDesktop">Nuvio HTPC</a>
+  <br></br>
 </p>
 
 ## Features
