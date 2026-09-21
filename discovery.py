@@ -284,6 +284,7 @@ LANGUAGE_LABELS: dict[str, str] = {
 
 # Sash type (controls colour) for each priority slot
 _SASH_TYPES: dict[str, str] = {
+    "watchlist":       "watchlist", # amber — the user's own queue (instance-wide, see watchlist.py)
     "wins":            "win",       # gold — Oscar Winner + Emmy Winner
     "gg_wins":         "win",       # gold — Globe Winner (separate slot)
     "pic_noms":        "nom",       # silver — Oscar Nominee + Emmy Nominee (film vs TV, never coexist)
@@ -448,6 +449,11 @@ class DiscoveryMeta:
     # Social proof
     trending_rank: int | None = None
 
+    # The instance's configured watchlist (watchlist.py) lists this title.
+    # Never cached with the rest of the meta — membership is looked up live
+    # from the in-memory snapshot on every render.
+    is_watchlisted: bool = False
+
     # Timely release / TV lifecycle signals
     is_new_release: bool = False      # legacy combined signal
     is_premiere: bool = False         # show initial release date within the last 2 weeks
@@ -504,6 +510,7 @@ def extract_discovery_meta(
     notable_directors: dict[str, str] | None = None,
     notable_cast:      dict[str, str] | None = None,
     language_labels:   dict[str, str] | None = None,
+    is_watchlisted:    bool = False,
 ) -> DiscoveryMeta:
     studios        = notable_studios   or NOTABLE_STUDIOS
     directors      = notable_directors or NOTABLE_DIRECTORS
@@ -514,6 +521,7 @@ def extract_discovery_meta(
         award_noms=award_noms,
         trending_rank=trending_rank,
         original_language=tmdb_data.get("original_language"),
+        is_watchlisted=is_watchlisted,
     )
 
     # Build keyword name set once — reused for festival detection and the
@@ -699,6 +707,9 @@ def pick_sash(
 def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
     """Return a label string if this slot has a match, else None."""
 
+    if slot == "watchlist":
+        return "Watchlist" if meta.is_watchlisted else None
+
     if slot == "wins":
         # Oscar Best Picture wins and Emmy Outstanding wins only.
         # Golden Globe wins have their own slot (gg_wins) so they can be
@@ -826,6 +837,7 @@ def _release_status_label(meta: DiscoveryMeta) -> str | None:
 # ---------------------------------------------------------------------------
 
 ALL_PRIORITY_SLOTS: list[str] = [
+    "watchlist",
     "wins",
     "gg_wins",
     "festival",
@@ -868,10 +880,7 @@ ALL_PRIORITY_SLOTS: list[str] = [
 # Operator override loader
 # ---------------------------------------------------------------------------
 
-_OVERRIDE_PATH = os.environ.get(
-    "DISCOVERY_OVERRIDES_PATH",
-    "/app/cache/discovery_overrides.json",
-)
+_OVERRIDE_PATH = _cfg.DISCOVERY_OVERRIDES_PATH
 
 
 def _load_discovery_overrides() -> None:

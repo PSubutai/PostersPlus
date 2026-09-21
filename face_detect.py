@@ -20,6 +20,8 @@ import threading
 
 import numpy as np
 
+import config as _cfg
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -28,10 +30,8 @@ try:
 except Exception:
     _HAS_CV2 = False
 
-_MODEL_PATH = os.environ.get(
-    "YUNET_MODEL_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "models",
-                 "face_detection_yunet.onnx"),
+_MODEL_PATH = _cfg.YUNET_MODEL_PATH or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "models", "face_detection_yunet.onnx",
 )
 _SCORE_THRESHOLD = 0.6
 

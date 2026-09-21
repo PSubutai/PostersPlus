@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Posters+ // Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  /* Design tokens shared with configurator.html — keep the two in step. */
+  :root {
+    --black:       #0a0a0b;
+    --black1:      #111114;
+    --black2:      #18181c;
+    --black3:      #1f1f25;
+    --black4:      #27272f;
+    --black5:      #2f2f39;
+
+    --gold:        #c9a84c;
+    --gold-bright: #e8c76a;
+    --gold-dim:    #8a6e2e;
+    --gold-faint:  #1e1810;
+    --gold-glow:   rgba(201,168,76,0.12);
+
+    --silver:      #b8bec9;
+    --silver-bright: #d8dde6;
+    --silver-dim:  #787e8a;
+    --silver-faint:#161820;
+
+    --platinum:    #e8eaf0;
+    --cream:       #e7e1d4;
+
+    --text-primary:   #dde0e8;
+    --text-secondary: #7d838f;
+    --text-muted:     #3d4048;
+    --border:         #252530;
+    --border-active:  #8a6e2e;
+
+    --ok:      #4ab87a;
+    --warn:    #e8963a;
+    --danger:  #e05555;
+
+    --serif: 'Cormorant Garamond', Georgia, serif;
+    --mono:  'DM Mono', 'Courier New', monospace;
+
+    --radius:    10px;
+    --radius-sm: 6px;
+
+    --gap-label: 8px;
+    --gap-field: 18px;
+    --gap-group: 24px;
+  }
+
+  html.light-mode {
+    --black:   #f5f2ec;
+    --black1:  #eeebe3;
+    --black2:  #e5e2d8;
+    --black3:  #dbd8ce;
+    --black4:  #ccc9be;
+    --black5:  #bcb8ac;
+    --gold:        #103578;
+    --gold-bright: #1e4e90;
+    --gold-dim:    #4a7ab8;
+    --gold-faint:  #eaf2fc;
+    --gold-glow:   rgba(16,53,120,0.22);
+    --silver:        #4a5262;
+    --silver-bright: #2e3446;
+    --silver-dim:    #5a6878;
+    --silver-faint:  #eaecf6;
+    --platinum:      #1e2432;
+    --text-primary:   #18181e;
+    --text-secondary: #4e5062;
+    --text-muted:     #606070;
+    --border:        #a0998e;
+    --border-active: #103578;
+    --cream:         #1e2432;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--black);
+    color: var(--text-primary);
+    font-family: var(--mono);
+    font-size: 12px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+    opacity: 0.6;
+  }
+
+  a { color: var(--gold); text-decoration: none; }
+  a:hover { color: var(--gold-bright); }
+
+  .shell {
+    position: relative;
+    z-index: 1;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 28px 96px;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 28px 0 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+  }
+  .header-left { display: flex; align-items: baseline; gap: 20px; }
+  .logo {
+    font-family: var(--serif);
+    font-size: 28px;
+    font-weight: 300;
+    letter-spacing: 0.25em;
+    color: var(--gold);
+    text-transform: uppercase;
+  }
+  .logo em { font-style: normal; color: var(--gold-bright); font-weight: 500; }
+  .header-sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .header-right { display: flex; align-items: center; gap: 22px; }
+  .header-link {
+    display: flex; align-items: center; gap: 7px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    opacity: 0.7;
+    background: none; border: none; cursor: pointer; padding: 0;
+    transition: opacity 0.15s, color 0.15s;
+  }
+  .header-link:hover { opacity: 1; color: var(--silver); }
+  .header-link svg { flex-shrink: 0; display: block; }
+
+  /* ── LAYOUT ── */
+  .layout { display: grid; grid-template-columns: 210px 1fr; gap: 28px; align-items: start; }
+  .nav { position: sticky; top: 20px; }
+  .nav-title {
+    font-size: 8.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--silver-dim);
+    margin: 0 0 10px 12px;
+  }
+  .nav a {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    border: 1px solid transparent;
+  }
+  .nav a:hover { color: var(--text-primary); background: var(--black2); }
+  .nav a.active { color: var(--gold-bright); background: var(--gold-faint); border-color: var(--gold-dim); }
+  .nav a > span:first-child { flex: 1; min-width: 0; }
+  .nav a .count { font-size: 9px; color: var(--text-muted); flex-shrink: 0; }
+  .nav a .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+  .nav-sep { height: 1px; background: var(--border); margin: 12px 0; }
+
+  .panel {
+    background: var(--black1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: var(--gap-group);
+    overflow: hidden;
+  }
+  .panel-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-title {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 400;
+    letter-spacing: 0.03em;
+    color: var(--gold);
+  }
+  .panel-index { font-size: 8.5px; color: var(--silver); letter-spacing: 0.18em; text-transform: uppercase; }
+  .panel-body { padding: var(--gap-group) 20px calc(var(--gap-group) - var(--gap-field)); }
+
+  /* ── FORM ── */
+  .field { margin-bottom: var(--gap-field); }
+  .field-head { display: flex; align-items: center; gap: 8px; margin-bottom: var(--gap-label); flex-wrap: wrap; }
+  .field-label {
+    font-size: 8.5px;
+    line-height: 14px;
+    color: var(--silver-bright);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  .field-key { font-size: 8.5px; color: var(--text-muted); letter-spacing: 0.06em; }
+  .chip {
+    font-size: 7.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--silver-dim);
+    line-height: 12px;
+  }
+  .chip.file    { color: var(--gold-bright); border-color: var(--gold-dim); background: var(--gold-faint); }
+  .chip.env     { color: var(--silver); }
+  .chip.pending { color: var(--warn); border-color: var(--warn); }
+  .chip.dirty   { color: var(--ok); border-color: var(--ok); }
+  .field-hint { font-size: 9.5px; color: var(--silver-dim); margin-top: var(--gap-label); line-height: 1.6; }
+  .field-hint .reset { margin-left: 8px; cursor: pointer; color: var(--gold-dim); background: none; border: none; font: inherit; }
+  .field-hint .reset:hover { color: var(--gold); }
+  .field-error { font-size: 9.5px; color: var(--danger); margin-top: 6px; }
+  .field.has-error input, .field.has-error select { border-color: var(--danger); }
+
+  input[type="text"], input[type="password"], input[type="number"], select {
+    width: 100%;
+    background: var(--black2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 10px 13px;
+    outline: none;
+    transition: border-color 0.15s, background-color 0.15s;
+    appearance: none; -webkit-appearance: none;
+  }
+  input:focus, select:focus {
+    border-color: var(--gold-dim);
+    background-color: var(--black3);
+    box-shadow: inset 0 0 0 1px rgba(201,168,76,0.08);
+  }
+  input::placeholder { color: var(--text-muted); }
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a6e2e'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 13px center;
+    padding-right: 32px;
+    cursor: pointer;
+  }
+  select option { background: var(--black2); color: var(--text-primary); }
+  .control-row { display: flex; gap: 8px; align-items: center; }
+  .control-row input { flex: 1; min-width: 0; }
+
+  .toggle-row { display: flex; align-items: center; gap: 12px; }
+  .toggle-switch { position: relative; width: 36px; height: 19px; flex-shrink: 0; }
+  .toggle-switch input { display: none; }
+  .toggle-track {
+    position: absolute; inset: 0;
+    background: var(--black4);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .toggle-thumb {
+    position: absolute; top: 2px; left: 2px;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--text-muted);
+    transition: transform 0.2s, background 0.2s;
+  }
+  .toggle-switch input:checked ~ .toggle-track { background: rgba(201,168,76,0.28); border-color: var(--gold-dim); }
+  .toggle-switch input:checked ~ .toggle-track .toggle-thumb { transform: translateX(17px); background: var(--gold); }
+  .toggle-state { font-size: 11px; color: var(--text-secondary); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 9px 16px;
+    font-family: var(--mono);
+    font-size: 8px; font-weight: 500;
+    letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+    border: 1px solid; border-radius: var(--radius-sm);
+    background: transparent;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .btn-primary {
+    background: linear-gradient(180deg, rgba(201,168,76,0.22), rgba(201,168,76,0.08));
+    color: var(--gold-bright); border-color: var(--gold-dim);
+  }
+  .btn-primary:hover:not(:disabled) { background: linear-gradient(180deg, rgba(201,168,76,0.32), rgba(201,168,76,0.12)); border-color: var(--gold); }
+  .btn-secondary {
+    background: linear-gradient(180deg, rgba(184,190,201,0.16), rgba(184,190,201,0.05));
+    color: var(--silver-bright); border-color: var(--silver-dim);
+  }
+  .btn-secondary:hover:not(:disabled) { border-color: var(--silver); }
+  .btn-small { padding: 6px 10px; font-size: 7.5px; }
+
+  .advanced-toggle {
+    display: flex; align-items: center; gap: 8px;
+    margin: 4px 0 var(--gap-field);
+    padding-top: var(--gap-group);
+    border-top: 1px solid var(--border);
+    background: none; border-left: none; border-right: none; border-bottom: none;
+    width: 100%;
+    color: var(--silver-dim);
+    font-family: var(--mono);
+    font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer; text-align: left;
+  }
+  .advanced-toggle:hover { color: var(--silver); }
+  .advanced-toggle .caret { transition: transform 0.15s; display: inline-block; }
+  .advanced-toggle.open .caret { transform: rotate(90deg); }
+  .advanced-body { display: none; }
+  .advanced-body.open { display: block; }
+
+  /* ── OVERVIEW ── */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: var(--gap-field); }
+  .tile {
+    background: var(--black2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 15px;
+  }
+  .tile-label { font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--silver-dim); margin-bottom: 8px; }
+  .tile-value { font-family: var(--serif); font-size: 24px; font-weight: 400; color: var(--cream); line-height: 1.1; }
+  .tile-value small { font-family: var(--mono); font-size: 10px; color: var(--text-secondary); margin-left: 6px; letter-spacing: 0.04em; }
+  .tile-sub { font-size: 9.5px; color: var(--text-secondary); margin-top: 6px; line-height: 1.5; }
+  .tile.ok .tile-value { color: var(--ok); }
+  .tile.warn .tile-value { color: var(--warn); }
+  .tile.bad .tile-value { color: var(--danger); }
+
+  .kv { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .kv td { padding: 7px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .kv td:first-child { color: var(--silver-dim); width: 42%; letter-spacing: 0.04em; }
+  .kv tr:last-child td { border-bottom: none; }
+
+  /* ── NOTICES ── */
+  .notice {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 13px 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--black2);
+    margin-bottom: var(--gap-group);
+    font-size: 11px; line-height: 1.6;
+  }
+  .notice.warn { border-color: var(--warn); }
+  .notice.bad  { border-color: var(--danger); }
+  .notice.ok   { border-color: var(--ok); }
+  .notice strong { color: var(--cream); font-weight: 500; }
+  .notice code { background: var(--black4); padding: 1px 6px; border-radius: 4px; font-size: 10.5px; }
+  .notice .notice-body { flex: 1; }
+  .notice .notice-body p + p { margin-top: 6px; }
+  .notice .keys { color: var(--silver-dim); }
+
+  /* ── SAVE BAR ── */
+  .savebar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    display: none; align-items: center; justify-content: center; gap: 14px;
+    padding: 12px 20px;
+    background: var(--black1);
+    border-top: 1px solid var(--gold-dim);
+    box-shadow: 0 -8px 30px rgba(0,0,0,0.4);
+  }
+  .savebar.show { display: flex; }
+  .savebar .count { font-size: 11px; color: var(--silver); letter-spacing: 0.04em; }
+  .savebar .count strong { color: var(--gold-bright); }
+
+  .toast {
+    position: fixed; right: 22px; bottom: 74px; z-index: 30;
+    background: var(--black3); border: 1px solid var(--gold-dim);
+    color: var(--text-primary);
+    padding: 11px 15px; border-radius: var(--radius-sm);
+    font-size: 11px;
+    opacity: 0; transform: translateY(6px);
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ── GATE ── */
+  .gate { max-width: 440px; margin: 60px auto; }
+  .gate .panel-body { padding-bottom: var(--gap-group); }
+  .gate p { font-size: 11px; color: var(--text-secondary); line-height: 1.7; margin-bottom: var(--gap-field); }
+  .gate code { background: var(--black3); padding: 1px 6px; border-radius: 4px; font-size: 10.5px; color: var(--text-primary); }
+  .gate .row { display: flex; gap: 10px; }
+  .gate .row input { flex: 1; }
+  .gate label.remember { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--text-secondary); margin-top: 12px; cursor: pointer; }
+  .gate label.remember input { width: auto; }
+
+  .hidden { display: none !important; }
+
+  .notice .notice-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .btn-danger {
+    background: linear-gradient(180deg, rgba(224,85,85,0.22), rgba(224,85,85,0.08));
+    color: #f08a8a; border-color: var(--danger);
+  }
+  .btn-danger:hover:not(:disabled) { background: linear-gradient(180deg, rgba(224,85,85,0.34), rgba(224,85,85,0.12)); }
+
+  /* Full-page veil while the server goes down and comes back. */
+  .veil {
+    position: fixed; inset: 0; z-index: 40;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(10,10,11,0.82);
+    backdrop-filter: blur(3px);
+  }
+  .veil.show { display: flex; }
+  .veil .card {
+    background: var(--black1); border: 1px solid var(--gold-dim); border-radius: var(--radius);
+    padding: 26px 32px; text-align: center; max-width: 420px;
+  }
+  .veil .card h2 { font-family: var(--serif); font-weight: 400; font-size: 22px; color: var(--gold); margin-bottom: 8px; }
+  .veil .card p { font-size: 11px; color: var(--text-secondary); line-height: 1.7; }
+  .veil .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--gold); margin-right: 8px; animation: pulse 1.2s ease-in-out infinite; vertical-align: middle; }
+  @keyframes pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+
+  @media (max-width: 860px) {
+    .shell { padding: 0 16px 96px; }
+    .layout { grid-template-columns: 1fr; }
+    .nav { position: static; display: flex; flex-wrap: wrap; gap: 6px; }
+    .nav-title, .nav-sep { display: none; }
+    .nav a { padding: 6px 10px; }
+    .header-link span { display: none; }
+    input[type="text"], input[type="password"], input[type="number"], select { min-height: 44px; font-size: 16px; }
+  }
+</style>
+<script>try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElement.classList.add('light-mode')}catch(e){}</script>
+</head>
+<body>
+
+<div class="shell">
+
+  <header class="header">
+    <div class="header-left">
+      <span class="logo"><em>Posters</em>+</span>
+      <span class="header-sub">Admin</span>
+    </div>
+    <div class="header-right">
+      <button type="button" class="header-link" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+        <svg width="15" height="15" viewBox="5 2 14 16" fill="currentColor" aria-hidden="true"><path d="M12 2C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26C17.81 13.47 19 11.38 19 9c0-3.86-3.14-7-7-7zm2 13h-4v-1h4v1zm0-3h-4v-1.1l-.9-.64A4.99 4.99 0 0 1 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.68-.84 3.21-2.1 4.26L13 13.9V12zm-4 5h4v1h-4v-1z"/></svg>
+        <span>Theme</span>
+      </button>
+      <a class="header-link" href="/" title="Open the configurator">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        <span>Configurator</span>
+      </a>
+      <button type="button" class="header-link hidden" id="signout" onclick="signOut()" title="Forget the admin key in this browser">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        <span>Sign out</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Key gate: shown until a key is accepted -->
+  <div class="gate" id="gate">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Admin access</span>
+        <span class="panel-index" id="gate-index">Locked</span>
+      </div>
+      <div class="panel-body">
+        <div id="gate-disabled" class="hidden">
+          <p>The dashboard is off because the server has no <code>ADMIN_KEY</code>. It is the one setting that stays in the environment — everything else can move here once it is set.</p>
+          <p>Add <code>ADMIN_KEY=&lt;a long random string&gt;</code> to your <code>.env</code> (or the compose <code>environment:</code> block), recreate the container, and reload this page.</p>
+          <p>Don't reuse <code>ACCESS_KEY</code>: it travels in every poster URL your clients hold.</p>
+        </div>
+        <div id="gate-form">
+          <p>Enter the server's <code>ADMIN_KEY</code>.</p>
+          <div class="row">
+            <input type="password" id="gate-key" placeholder="Admin key" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitKey()">
+            <button type="button" class="btn btn-primary" onclick="submitKey()">Open</button>
+          </div>
+          <label class="remember"><input type="checkbox" id="gate-remember"> Remember on this browser</label>
+          <div class="field-error hidden" id="gate-error"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="layout hidden" id="app">
+    <nav class="nav" id="nav"></nav>
+    <main id="main"></main>
+  </div>
+
+</div>
+
+<div class="savebar" id="savebar">
+  <span class="count"><strong id="dirty-count">0</strong> unsaved changes</span>
+  <button type="button" class="btn btn-secondary" onclick="discardChanges()">Discard</button>
+  <button type="button" class="btn btn-primary" id="save-btn" onclick="saveChanges()">Save</button>
+</div>
+<div class="toast" id="toast"></div>
+<div class="veil" id="veil"><div class="card"><h2><span class="pulse"></span>Restarting</h2><p id="veil-text">Waiting for the server to come back…</p></div></div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Theme — same key as the configurator so the two pages agree.
+function toggleTheme() {
+  const light = !document.documentElement.classList.contains('light-mode');
+  document.documentElement.classList.toggle('light-mode', light);
+  try { localStorage.setItem('postersplus_theme', light ? 'light' : 'dark'); } catch (_) {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Key handling.  sessionStorage by default; localStorage when asked.
+const KEY_STORE = 'postersplus_admin_key';
+let adminKey = '';
+function loadKey() {
+  try { return sessionStorage.getItem(KEY_STORE) || localStorage.getItem(KEY_STORE) || ''; } catch (_) { return ''; }
+}
+function storeKey(key, remember) {
+  try {
+    sessionStorage.setItem(KEY_STORE, key);
+    if (remember) localStorage.setItem(KEY_STORE, key); else localStorage.removeItem(KEY_STORE);
+  } catch (_) {}
+}
+function signOut() {
+  try { sessionStorage.removeItem(KEY_STORE); localStorage.removeItem(KEY_STORE); } catch (_) {}
+  location.reload();
+}
+async function api(path, opts = {}) {
+  const headers = Object.assign({ 'X-Admin-Key': adminKey }, opts.headers || {});
+  const resp = await fetch(path, Object.assign({}, opts, { headers }));
+  let body = null;
+  try { body = await resp.json(); } catch (_) {}
+  return { ok: resp.ok, status: resp.status, body };
+}
+
+async function submitKey() {
+  const key = document.getElementById('gate-key').value.trim();
+  const err = document.getElementById('gate-error');
+  err.classList.add('hidden');
+  if (!key) return;
+  adminKey = key;
+  const r = await api('/admin/api/session');
+  if (r.body && r.body.ok) {
+    storeKey(key, document.getElementById('gate-remember').checked);
+    await boot();
+  } else {
+    adminKey = '';
+    err.textContent = r.status === 429
+      ? 'Too many failed attempts from this address — locked out for 10 minutes.'
+      : 'That key was not accepted.';
+    err.classList.remove('hidden');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+let model = null;          // /admin/api/settings payload
+let status = null;         // /admin/api/status payload
+let changes = {};          // key -> string | null (null = reset to env/default)
+let errors = {};           // key -> message from the last save attempt
+let activeView = 'overview';
+let openAdvanced = new Set();
+let statusTimer = null;
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function slug(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
+
+async function boot() {
+  const session = await api('/admin/api/session');
+  const gate = document.getElementById('gate');
+  if (!session.body || !session.body.enabled) {
+    document.getElementById('gate-disabled').classList.remove('hidden');
+    document.getElementById('gate-form').classList.add('hidden');
+    document.getElementById('gate-index').textContent = 'Disabled';
+    gate.classList.remove('hidden');
+    return;
+  }
+  if (!session.body.ok) {
+    gate.classList.remove('hidden');
+    document.getElementById('gate-key').focus();
+    return;
+  }
+  gate.classList.add('hidden');
+  document.getElementById('signout').classList.remove('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  await Promise.all([loadSettings(), loadStatus()]);
+  const hash = (location.hash || '').slice(1);
+  setView(hash && (hash === 'overview' || model.groups.some(g => slug(g.name) === hash)) ? hash : 'overview');
+  clearInterval(statusTimer);
+  statusTimer = setInterval(loadStatus, 15000);
+}
+
+async function loadSettings() {
+  const r = await api('/admin/api/settings');
+  if (r.ok) { model = r.body; renderNav(); if (activeView !== 'overview') renderView(); }
+}
+async function loadStatus() {
+  const r = await api('/admin/api/status');
+  if (!r.ok) return;
+  status = r.body;
+  if (activeView === 'overview') renderView();
+  else refreshSimklPanel();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Navigation
+function renderNav() {
+  const nav = document.getElementById('nav');
+  const pending = new Set(model.pending_restart || []);
+  let html = `<div class="nav-title">Instance</div>`;
+  html += `<a href="#overview" data-view="overview" class="${activeView === 'overview' ? 'active' : ''}"><span>Overview</span>${pending.size ? '<span class="dot" title="Restart required"></span>' : ''}</a>`;
+  html += `<div class="nav-sep"></div><div class="nav-title">Settings</div>`;
+  for (const g of model.groups) {
+    const id = slug(g.name);
+    const dirty = g.settings.filter(s => s.key in changes).length;
+    const pend = g.settings.some(s => pending.has(s.key));
+    html += `<a href="#${id}" data-view="${id}" class="${activeView === id ? 'active' : ''}"><span>${esc(g.name)}</span>${dirty ? `<span class="chip dirty">${dirty}</span>` : (pend ? '<span class="dot" title="Restart required"></span>' : `<span class="count">${g.settings.length}</span>`)}</a>`;
+  }
+  nav.innerHTML = html;
+  nav.querySelectorAll('a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setView(a.dataset.view); }));
+}
+function setView(view) {
+  activeView = view;
+  history.replaceState(null, '', '#' + view);
+  renderNav();
+  renderView();
+  window.scrollTo({ top: 0 });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Overview
+function fmtBytes(n) {
+  if (n == null) return '—';
+  const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(i ? 1 : 0) + ' ' + u[i];
+}
+function fmtNum(n) { return n == null ? '—' : Number(n).toLocaleString(); }
+function fmtUptime(s) {
+  if (s == null) return '—';
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+function fmtAgo(ts) {
+  if (!ts) return 'never';
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+  return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} d ago`;
+}
+
+function restartNotice() {
+  const pending = (model && model.pending_restart) || [];
+  if (!pending.length) return '';
+  return `<div class="notice warn"><div class="notice-body">
+    <p><strong>Restart required.</strong> ${pending.length} saved ${pending.length === 1 ? 'setting differs' : 'settings differ'} from what this process started with. Settings are read at startup, so they apply on the next one.</p>
+    <p class="keys">${pending.map(esc).join(' · ')}</p>
+  </div><div class="notice-actions"><button type="button" class="btn btn-primary" onclick="restartServer()">Restart now</button></div></div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Restart: the server stops itself and the container's restart policy brings
+// it back.  Confirm first — without a policy it would just stay stopped.
+async function restartServer() {
+  if (Object.keys(changes).length && !confirm('You have unsaved changes that will be lost. Restart anyway?')) return;
+  if (!confirm('Restart PostersPlus now?\n\nThe server stops itself and relies on the container restart policy (compose.yaml ships with restart: unless-stopped) to start again. In-flight renders finish first; new requests fail for a few seconds.')) return;
+  const r = await api('/admin/api/restart', { method: 'POST' });
+  if (!r.ok) { toast(r.body && r.body.detail ? r.body.detail : `Restart failed (HTTP ${r.status})`); return; }
+  changes = {}; updateDirty();
+  clearInterval(statusTimer);
+  const veil = document.getElementById('veil'), text = document.getElementById('veil-text');
+  veil.classList.add('show');
+  // Phase 1: wait for it to go away; phase 2: wait for it to answer again.
+  const started = Date.now();
+  let down = false;
+  while (Date.now() - started < 120000) {
+    await new Promise(r => setTimeout(r, 1500));
+    let alive = false;
+    try { const h = await fetch('/health', { cache: 'no-store' }); alive = h.ok; } catch (_) {}
+    if (!down) {
+      if (!alive) { down = true; text.textContent = 'Server stopped. Waiting for the container to start it again…'; }
+      else if (Date.now() - started > 15000) { text.textContent = 'Still running after 15s — the signal may not have reached the server. Check the container log.'; }
+    } else if (alive) {
+      text.textContent = 'Back. Reloading…';
+      await new Promise(r => setTimeout(r, 800));
+      location.reload();
+      return;
+    }
+  }
+  text.textContent = 'The server has not come back after two minutes. If the container has no restart policy, start it by hand: docker compose up -d postersplus';
+}
+
+function renderOverview() {
+  const s = status || {};
+  const rt = s.runtime || {};
+  const cache = s.cache || {};
+  const wl = s.watchlist || {};
+  const ds = s.imdb_dataset || {};
+  const cw = s.cache_warm || {};
+  const keys = rt.mdblist_keys || [];
+  const tiles = [];
+  tiles.push({ label: 'Version', value: esc(s.version || '—'), sub: `up ${fmtUptime(s.uptime_secs)}` });
+  tiles.push({ label: 'Rendered posters', value: fmtNum(cache.final_poster_cache), sub: `${fmtBytes(cache.composite_bytes)} in cache · DB ${fmtBytes(cache.db_file_bytes)}` });
+  tiles.push({ label: 'Renders', value: `${fmtNum(rt.renders_active)}<small>/ ${fmtNum(rt.render_slots)} slots</small>`, sub: `${fmtNum(rt.renders_queued)} queued · ${fmtNum(rt.renders_in_flight)} in flight`, cls: (rt.renders_queued || 0) > 0 ? 'warn' : '' });
+  if (keys.length) {
+    for (const k of keys) {
+      const rem = k.daily_remaining, lim = k.daily_limit;
+      const pct = rem != null && lim ? rem / lim : null;
+      tiles.push({
+        label: `MDBList key ${k.index}${k.active ? ' · active' : ''}`,
+        value: rem == null ? '—' : `${fmtNum(rem)}<small>/ ${fmtNum(lim)} today</small>`,
+        sub: k.cooling_down ? `cooling down ${k.cooldown_secs}s` : (k.quota_reset_at ? `resets ${new Date(k.quota_reset_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'no request yet this window'),
+        cls: k.cooling_down ? 'bad' : (pct != null && pct < 0.15 ? 'warn' : (pct != null ? 'ok' : '')),
+      });
+    }
+  } else {
+    tiles.push({ label: 'MDBList', value: 'no key', sub: 'ratings read N/A without one', cls: 'warn' });
+  }
+  tiles.push({ label: 'TMDB key', value: s.tmdb_key_set ? 'set' : 'missing', sub: s.tvdb_key_set ? 'TVDB fallback on' : 'no TVDB key', cls: s.tmdb_key_set ? 'ok' : 'bad' });
+  tiles.push({ label: 'Quality source', value: esc((s.quality || {}).source || '—'), sub: (s.quality || {}).configured ? 'configured' : 'not configured', cls: (s.quality || {}).configured ? 'ok' : 'warn' });
+  if (wl.source === 'simkl' && wl.simkl && !wl.simkl.linked) {
+    tiles.push({ label: 'Watchlist', value: 'simkl', sub: wl.simkl.pending ? 'link code awaiting approval — see Watchlist' : 'account not linked — see Watchlist', cls: 'warn' });
+  } else {
+    tiles.push({ label: 'Watchlist', value: wl.source ? esc(wl.source) : 'off', sub: wl.source ? (wl.last_error ? esc(wl.last_error) : `${fmtNum(wl.titles)} titles · refreshed ${fmtAgo(wl.fetched_at)}`) : 'no source configured', cls: wl.last_error ? 'bad' : (wl.source ? 'ok' : '') });
+  }
+  tiles.push({ label: 'Cache warming', value: cw.enabled ? 'on' : 'off', sub: cw.enabled ? `every ${cw.interval_hours} h · last ${fmtAgo(cw.last_run)}` : 'enable under Cache warming', cls: cw.enabled ? 'ok' : '' });
+  tiles.push({ label: 'IMDb dataset', value: ds.enabled ? (ds.ready ? 'ready' : 'loading') : 'off', sub: ds.enabled ? `${fmtNum(ds.last_refresh_rows)} titles · refreshed ${fmtAgo(ds.last_refresh_unix)}` : 'MDBList-free imdb weight', cls: ds.enabled ? (ds.ready ? 'ok' : 'warn') : '' });
+  tiles.push({ label: 'Text detection', value: s.text_detection ? 'on' : 'off', sub: `${fmtNum(cache.text_detection_cache)} scans cached` });
+
+  const kv = [
+    ['Rating cache', fmtNum(cache.rating_cache)],
+    ['TMDB metadata cache', fmtNum(cache.tmdb_metadata_cache)],
+    ['Quality cache', fmtNum(cache.quality_cache)],
+    ['Release-status cache', fmtNum(cache.release_status_cache)],
+    ['Trending refresh', s.trending && s.trending.fetch_time ? `daily at ${esc(s.trending.fetch_time)} ${esc(s.trending.timezone)}` : 'every 24 h from startup'],
+    ['Trending sources', s.trending ? [(s.trending.source_movie ? 'custom movie list' : 'TMDB movies'), (s.trending.source_tv ? 'custom TV list' : 'TMDB TV')].join(' · ') : '—'],
+    ['Rating fetches in flight', fmtNum(rt.rating_fetches_in_flight)],
+    ['Titles in rating back-off', fmtNum(rt.rating_backoff_titles)],
+    ['Quality source back-off', rt.quality_source_backoff_secs ? `${rt.quality_source_backoff_secs}s` : 'none'],
+    ['Composite cache', rt.composite_cache_disabled ? 'disabled' : 'on'],
+    ['Settings file', s.settings_file ? `${esc(s.settings_file.path)} · ${s.settings_file.keys} saved · ${s.settings_file.writable ? 'writable' : '<span style="color:var(--danger)">not writable</span>'}` : '—'],
+  ];
+
+  let html = restartNotice();
+  if (model && !model.writable) {
+    html += `<div class="notice bad"><div class="notice-body"><p><strong>${esc(model.settings_path)} is not writable.</strong> Saves will fail. The settings file lives in the cache volume; check the mount and its ownership.</p></div></div>`;
+  }
+  html += `<div class="panel"><div class="panel-header"><span class="panel-title">Overview</span><span style="display:flex;align-items:center;gap:14px"><span class="panel-index">live · refreshes every 15s</span><button type="button" class="btn btn-secondary btn-small" onclick="restartServer()">Restart server</button></span></div><div class="panel-body">`;
+  html += `<div class="tiles">${tiles.map(t => `<div class="tile ${t.cls || ''}"><div class="tile-label">${t.label}</div><div class="tile-value">${t.value}</div><div class="tile-sub">${t.sub}</div></div>`).join('')}</div>`;
+  html += `<table class="kv">${kv.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>`;
+  html += `</div></div>`;
+  return html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings groups
+function currentValue(s) {
+  // What the control should show: the pending edit, else the resolved value.
+  if (s.key in changes) {
+    const c = changes[s.key];
+    if (c === null) return s.kind === 'secret' ? '' : (s.env_value != null ? s.env_value : s.default);
+    return c;
+  }
+  return s.value;
+}
+
+function sourceChip(s) {
+  if (s.key in changes) {
+    return changes[s.key] === null ? '<span class="chip dirty">reset</span>' : '<span class="chip dirty">edited</span>';
+  }
+  const label = s.source === 'file' ? 'saved' : s.source;
+  return `<span class="chip ${s.source}" title="${s.source === 'file' ? 'Saved from this dashboard' : s.source === 'env' ? 'From the environment (.env / compose)' : 'Built-in default'}">${label}</span>`;
+}
+
+function resetLink(s) {
+  if (s.source !== 'file' || (s.key in changes && changes[s.key] === null)) return '';
+  const fallback = s.env_value != null || s.env_hint ? 'env value' : 'default';
+  return `<button type="button" class="reset" onclick="resetField('${s.key}')">Reset to ${fallback}</button>`;
+}
+
+function control(s) {
+  const v = currentValue(s);
+  const id = `f-${s.key}`;
+  switch (s.kind) {
+    case 'bool': {
+      const on = String(v).toLowerCase() === 'true' || v === '1' || v === 'yes';
+      return `<div class="toggle-row"><label class="toggle-switch"><input type="checkbox" id="${id}" ${on ? 'checked' : ''} onchange="edit('${s.key}', this.checked ? 'true' : 'false')"><div class="toggle-track"><div class="toggle-thumb"></div></div></label><span class="toggle-state">${on ? 'On' : 'Off'}</span></div>`;
+    }
+    case 'choice':
+      return `<select id="${id}" onchange="edit('${s.key}', this.value)">${s.choices.map(c => `<option value="${esc(c)}" ${c === v ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`;
+    case 'int':
+    case 'float': {
+      const step = s.kind === 'int' ? '1' : 'any';
+      return `<input type="number" id="${id}" value="${esc(v)}" step="${step}" ${s.min != null ? `min="${s.min}"` : ''} ${s.max != null ? `max="${s.max}"` : ''} placeholder="${esc(s.default)}" oninput="edit('${s.key}', this.value)">`;
+    }
+    case 'secret': {
+      const pendingEdit = s.key in changes && changes[s.key] !== null;
+      const ph = pendingEdit ? (changes[s.key] === '' ? 'Will be cleared' : 'New value entered') : (s.has_value ? `Set (${s.hint}) — type to replace` : 'Not set');
+      return `<div class="control-row"><input type="password" id="${id}" value="${esc(pendingEdit ? changes[s.key] : '')}" placeholder="${esc(ph)}" autocomplete="new-password" oninput="edit('${s.key}', this.value)">${s.has_value || pendingEdit ? `<button type="button" class="btn btn-secondary btn-small" onclick="edit('${s.key}', '')" title="Save an empty value, overriding the environment">Clear</button>` : ''}</div>`;
+    }
+    default:
+      return `<input type="text" id="${id}" value="${esc(v)}" placeholder="${esc(s.placeholder || s.default || '')}" oninput="edit('${s.key}', this.value)" onchange="controllerChanged('${s.key}')">`;
+  }
+}
+
+function fieldHtml(s) {
+  const err = errors[s.key];
+  return `<div class="field ${err ? 'has-error' : ''}" id="field-${s.key}">
+    <div class="field-head"><span class="field-label">${esc(s.label)}</span><span class="field-key">${esc(s.key)}</span>${sourceChip(s)}${s.pending ? '<span class="chip pending" title="Saved, applies after restart">restart</span>' : ''}</div>
+    ${control(s)}
+    ${err ? `<div class="field-error">${esc(err)}</div>` : ''}
+    <div class="field-hint">${esc(s.help)}${s.kind === 'list' ? ' Comma-separated.' : ''}${s.default && s.kind !== 'secret' && s.kind !== 'bool' ? ` <span style="color:var(--text-muted)">Default ${esc(s.default)}.</span>` : ''}${resetLink(s)}</div>
+  </div>`;
+}
+
+// A field with show_if is only meaningful while its controlling field has one
+// of the listed values ("*" = any non-empty), so the others are left out of
+// the render — unless the last save rejected one, which must stay visible.
+function isShown(s) {
+  if (!s.show_if) return true;
+  if (errors[s.key]) return true;
+  const ctrl = findSetting(s.show_if[0]);
+  if (!ctrl) return true;
+  const v = String(currentValue(ctrl) ?? '').trim().toLowerCase();
+  const wanted = s.show_if[1];
+  return wanted.includes('*') ? v !== '' : wanted.includes(v);
+}
+function controlsOthers(key) {
+  return model.groups.some(g => g.settings.some(s => s.show_if && s.show_if[0] === key));
+}
+
+function renderGroup(g) {
+  const basic = g.settings.filter(s => !s.advanced && isShown(s));
+  const adv = g.settings.filter(s => s.advanced && isShown(s));
+  const id = slug(g.name);
+  const open = openAdvanced.has(id) || adv.some(s => s.key in changes || errors[s.key]);
+  let html = restartNotice();
+  if (g.name === 'Watchlist') html += `<div id="simkl-panel">${simklPanel()}</div>`;
+  const hidden = g.settings.length - basic.length - adv.length;
+  html += `<div class="panel"><div class="panel-header"><span class="panel-title">${esc(g.name)}</span><span class="panel-index">${g.settings.length} settings${hidden ? ` · ${hidden} not applicable` : ''}</span></div><div class="panel-body">`;
+  html += basic.map(fieldHtml).join('');
+  if (adv.length) {
+    html += `<button type="button" class="advanced-toggle ${open ? 'open' : ''}" onclick="toggleAdvanced('${id}')"><span class="caret">▸</span> Advanced <span style="color:var(--text-muted)">· ${adv.length}</span></button>`;
+    html += `<div class="advanced-body ${open ? 'open' : ''}">${adv.map(fieldHtml).join('')}</div>`;
+  }
+  html += `</div></div>`;
+  return html;
+}
+function toggleAdvanced(id) {
+  if (openAdvanced.has(id)) openAdvanced.delete(id); else openAdvanced.add(id);
+  renderView();
+}
+
+function renderView() {
+  const main = document.getElementById('main');
+  if (activeView === 'overview') { main.innerHTML = renderOverview(); return; }
+  const g = model.groups.find(g => slug(g.name) === activeView);
+  main.innerHTML = g ? renderGroup(g) : '';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SIMKL account.  One account per instance, linked by code: the refresh loop
+// issues it, the operator approves it on simkl.com, and the loop notices.
+// The panel reflects the *running* process — a saved WATCHLIST_SOURCE that
+// has not been restarted into is covered by the restart notice above it.
+// While a code is pending (or a fresh link awaits its first refresh) the
+// status is polled faster than the overview's 15s so the panel flips by
+// itself.
+let simklTimer = null;
+
+function simklPanel() {
+  const wl = (status && status.watchlist) || {};
+  const sk = wl.simkl;
+  clearTimeout(simklTimer);
+  if (wl.source !== 'simkl' || !sk) return '';
+  let body, actions = '', cls = '', index = '', poll = false;
+  if (sk.linked) {
+    cls = 'ok'; index = 'linked';
+    body = wl.titles
+      ? `<p><strong>Linked.</strong> ${fmtNum(wl.titles)} titles on the watchlist, refreshed ${fmtAgo(wl.fetched_at)}.${wl.last_error ? ` Last refresh failed: ${esc(wl.last_error)}` : ''}</p>`
+      : `<p><strong>Linked.</strong> Waiting for the first refresh${wl.last_error ? ` — last attempt failed: ${esc(wl.last_error)}` : ''}…</p>`;
+    actions = `<button type="button" class="btn btn-secondary" id="simkl-unlink-btn" onclick="unlinkSimkl()">Unlink account</button>`;
+    poll = !wl.titles;
+  } else if (sk.pending) {
+    const p = sk.pending;
+    const mins = Math.max(0, Math.round((p.expires_at * 1000 - Date.now()) / 60000));
+    // Server-supplied, but relayed from SIMKL's API — escape like any other
+    // data, and only make it clickable when it is an http(s) URL (escaping
+    // does nothing about a javascript: scheme in an href).
+    const raw = String(p.link || '');
+    const link = esc(raw);
+    const code = esc(p.user_code || '');
+    const open = /^https?:\/\//i.test(raw)
+      ? `<a href="${link}" target="_blank" rel="noopener">Open ${p.flow === 'v2' ? 'SIMKL' : link.replace(/^https?:\/\//i, '')}</a>`
+      : `Open <code>${link}</code>`;
+    cls = 'warn'; index = 'awaiting approval';
+    body = p.flow === 'v2'
+      ? `<p><strong>Waiting for approval.</strong> ${open}, sign in and approve PostersPlus — code <code>${code}</code>, valid ${mins} min.</p>`
+      : `<p><strong>Waiting for approval.</strong> ${open}, sign in and enter code <code>${code}</code> — valid ${mins} min.</p>`;
+    body += `<p class="keys">The same link and code are in the container log. This panel updates itself once the account is approved.</p>`;
+    poll = true;
+  } else {
+    cls = 'warn'; index = 'not linked';
+    body = `<p><strong>Not linked.</strong> ${wl.last_error ? `Last attempt failed: ${esc(wl.last_error)}` : 'Request a code, then approve it on simkl.com; the watchlist is read once the account is linked.'}</p>
+      <p class="keys">No SIMKL app yet? Create one at <a href="https://simkl.com/settings/developer/" target="_blank" rel="noopener">simkl.com/settings/developer</a> as <strong>TV, devices &amp; command line</strong> — no secret or redirect URL needed — save its client id below and restart.</p>`;
+    actions = `<button type="button" class="btn btn-primary" id="simkl-link-btn" onclick="requestSimklLink()">Get a link code</button>`;
+  }
+  if (poll) simklTimer = setTimeout(pollSimkl, 4000);
+  return `<div class="panel"><div class="panel-header"><span class="panel-title">SIMKL account</span><span class="panel-index">${index}</span></div><div class="panel-body">
+    <div class="notice ${cls}"><div class="notice-body">${body}</div>${actions ? `<div class="notice-actions">${actions}</div>` : ''}</div>
+  </div></div>`;
+}
+async function pollSimkl() {
+  // Just the watchlist state, not the whole overview payload.
+  const r = await api('/admin/api/watchlist');
+  if (!r.ok || !status) return;
+  status.watchlist = r.body;
+  if (activeView === 'overview') renderView(); else refreshSimklPanel();
+}
+function refreshSimklPanel() {
+  // Only the panel, never the group: a full render would rebuild the inputs
+  // under the operator's cursor.
+  const host = document.getElementById('simkl-panel');
+  if (host) host.innerHTML = simklPanel();
+}
+async function requestSimklLink() {
+  const btn = document.getElementById('simkl-link-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Requesting…'; }
+  const r = await api('/admin/api/watchlist/simkl/link', { method: 'POST' });
+  if (!r.ok) {
+    toast(r.body && r.body.detail ? r.body.detail : `Request failed (HTTP ${r.status})`);
+    if (btn) { btn.disabled = false; btn.textContent = 'Get a link code'; }
+    return;
+  }
+  // The code arrives on the loop's next tick, a second or two later.
+  clearTimeout(simklTimer);
+  simklTimer = setTimeout(pollSimkl, 2500);
+}
+async function unlinkSimkl() {
+  if (!confirm('Unlink the SIMKL account?\n\nThe stored token is forgotten, the Watchlist sash comes off every poster that has it, and a new link code is offered. (A V1 token is also removed on this side only — revoke it at simkl.com/settings/connected-apps if you want it gone from SIMKL too.)')) return;
+  const btn = document.getElementById('simkl-unlink-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Unlinking…'; }
+  const r = await api('/admin/api/watchlist/simkl/unlink', { method: 'POST' });
+  if (!r.ok) {
+    toast(r.body && r.body.detail ? r.body.detail : `Unlink failed (HTTP ${r.status})`);
+    if (btn) { btn.disabled = false; btn.textContent = 'Unlink account'; }
+    return;
+  }
+  toast(r.body.revoked ? 'Unlinked — grant revoked at SIMKL' : 'Unlinked');
+  if (status) { status.watchlist = r.body.status; refreshSimklPanel(); }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Editing
+function findSetting(key) {
+  for (const g of model.groups) for (const s of g.settings) if (s.key === key) return s;
+  return null;
+}
+function edit(key, value) {
+  const s = findSetting(key);
+  if (!s) return;
+  // Typing the resolved value back in is not a change.
+  if (value === s.value && !(s.kind === 'secret')) delete changes[key]; else changes[key] = value;
+  delete errors[key];
+  updateDirty(key);
+  if ((s.kind === 'choice' || s.kind === 'bool') && controlsOthers(key)) renderView();
+}
+function controllerChanged(key) {
+  if (controlsOthers(key)) renderView();
+}
+function resetField(key) {
+  changes[key] = null;
+  delete errors[key];
+  renderView();
+  updateDirty();
+}
+function updateDirty(key) {
+  const n = Object.keys(changes).length;
+  document.getElementById('dirty-count').textContent = n;
+  document.getElementById('savebar').classList.toggle('show', n > 0);
+  renderNav();
+  if (key) {
+    // Refresh just this field's chrome (chip / clear button) without
+    // rebuilding the input under the cursor.
+    const s = findSetting(key);
+    const head = document.querySelector(`#field-${key} .field-head`);
+    if (s && head) head.innerHTML = `<span class="field-label">${esc(s.label)}</span><span class="field-key">${esc(s.key)}</span>${sourceChip(s)}${s.pending ? '<span class="chip pending">restart</span>' : ''}`;
+    if (s && s.kind === 'bool') {
+      const state = document.querySelector(`#field-${key} .toggle-state`);
+      if (state) state.textContent = changes[key] === 'true' || (!(key in changes) && s.value === 'true') ? 'On' : 'Off';
+    }
+    if (s && s.kind === 'secret' && changes[key] === '') renderView();
+  }
+}
+function discardChanges() {
+  changes = {}; errors = {};
+  renderView(); updateDirty();
+}
+async function saveChanges() {
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const r = await api('/admin/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ changes }) });
+  btn.disabled = false; btn.textContent = 'Save';
+  if (r.status === 400 && r.body && r.body.errors) {
+    errors = r.body.errors;
+    renderView();
+    toast(`${Object.keys(errors).length} field${Object.keys(errors).length === 1 ? '' : 's'} need attention`);
+    const first = Object.keys(errors)[0];
+    const g = model.groups.find(g => g.settings.some(s => s.key === first));
+    if (g && slug(g.name) !== activeView) setView(slug(g.name));
+    return;
+  }
+  if (!r.ok) { toast(r.body && r.body.detail ? r.body.detail : `Save failed (HTTP ${r.status})`); return; }
+  model = r.body; changes = {}; errors = {};
+  renderView(); updateDirty();
+  toast(`Saved ${r.body.saved.length} setting${r.body.saved.length === 1 ? '' : 's'} — restart to apply`);
+  if (activeView !== 'overview') renderView();   // the restart banner appears at the top of the group
+  loadStatus();
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 3200);
+}
+window.addEventListener('beforeunload', e => { if (Object.keys(changes).length) { e.preventDefault(); e.returnValue = ''; } });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A key in the URL (?admin_key=…) is accepted once and then scrubbed from the
+// address bar, so a bookmark can carry it without every reload re-sending it.
+(function () {
+  const qs = new URLSearchParams(location.search);
+  const fromUrl = (qs.get('admin_key') || '').trim();
+  if (fromUrl) {
+    adminKey = fromUrl;
+    storeKey(fromUrl, false);
+    qs.delete('admin_key');
+    history.replaceState(null, '', location.pathname + (qs.toString() ? '?' + qs : '') + location.hash);
+  } else {
+    adminKey = loadKey();
+  }
+})();
+boot();
+</script>
+</body>
+</html>

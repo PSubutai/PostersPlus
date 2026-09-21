@@ -17,6 +17,7 @@ import urllib.request
 import numpy as np
 
 from config import EFFECTIVE_CPUS, TEXTLESS_DETECTION_CONCURRENCY as _CONCURRENCY
+import config as _cfg
 
 logger = logging.getLogger(__name__)
 
@@ -29,17 +30,10 @@ except Exception as exc:
     _HAS_RAPIDOCR = False
     _RAPIDOCR_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
-_MODEL_URL = os.environ.get(
-    "PPOCR_MODEL_URL",
-    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.8.0/"
-    "onnx/PP-OCRv5/det/ch_PP-OCRv5_det_mobile.onnx",
-)
-_MODEL_SHA256 = os.environ.get(
-    "PPOCR_MODEL_SHA256",
-    "4d97c44a20d30a81aad087d6a396b08f786c4635742afc391f6621f5c6ae78ae",
-)
+_MODEL_URL = _cfg.PPOCR_MODEL_URL
+_MODEL_SHA256 = _cfg.PPOCR_MODEL_SHA256
 _BAKED_MODEL = "/app/models/ch_PP-OCRv5_det_mobile.onnx"
-_MODEL_PATH = os.environ.get("PPOCR_MODEL_PATH") or (
+_MODEL_PATH = _cfg.PPOCR_MODEL_PATH or (
     _BAKED_MODEL if os.path.exists(_BAKED_MODEL)
     else "/app/cache/ch_PP-OCRv5_det_mobile.onnx"
 )
@@ -73,43 +67,14 @@ def _find_bundled_model(models_path, keyword: str) -> str:
 _CLS_MODEL_PATH = _find_bundled_model(_RAPIDOCR_MODELS, "cls")
 _REC_MODEL_PATH = _find_bundled_model(_RAPIDOCR_MODELS, "rec")
 
-try:
-    _BOX_THRESHOLD = float(os.environ.get("PPOCR_BOX_THRESHOLD", "0.70"))
-except (TypeError, ValueError):
-    _BOX_THRESHOLD = 0.70
-_BOX_THRESHOLD = max(0.0, min(1.0, _BOX_THRESHOLD))
-
-try:
-    _WIDE_BOX_THRESHOLD = float(
-        os.environ.get("PPOCR_WIDE_BOX_THRESHOLD", "0.30")
-    )
-except (TypeError, ValueError):
-    _WIDE_BOX_THRESHOLD = 0.30
-_WIDE_BOX_THRESHOLD = max(0.0, min(_BOX_THRESHOLD, _WIDE_BOX_THRESHOLD))
-
-try:
-    _WIDE_MIN_ASPECT = float(os.environ.get("PPOCR_WIDE_MIN_ASPECT", "3.0"))
-except (TypeError, ValueError):
-    _WIDE_MIN_ASPECT = 3.0
-_WIDE_MIN_ASPECT = max(1.0, _WIDE_MIN_ASPECT)
-
-try:
-    _WIDE_MIN_AREA = float(os.environ.get("PPOCR_WIDE_MIN_AREA", "0.01"))
-except (TypeError, ValueError):
-    _WIDE_MIN_AREA = 0.01
-_WIDE_MIN_AREA = max(0.0, min(1.0, _WIDE_MIN_AREA))
-
-try:
-    _WIDE_MIN_Y = float(os.environ.get("PPOCR_WIDE_MIN_Y", "0.55"))
-except (TypeError, ValueError):
-    _WIDE_MIN_Y = 0.55
-_WIDE_MIN_Y = max(0.0, min(1.0, _WIDE_MIN_Y))
-
-try:
-    _SCAN_TOP = float(os.environ.get("TEXTLESS_SCAN_TOP", "0.08"))
-except (TypeError, ValueError):
-    _SCAN_TOP = 0.08
-_SCAN_TOP = max(0.0, min(0.9, _SCAN_TOP))
+# All declared in config.py (so the admin dashboard can set them); the only
+# rule kept here is that the wide-box fallback never outranks the box threshold.
+_BOX_THRESHOLD      = _cfg.PPOCR_BOX_THRESHOLD
+_WIDE_BOX_THRESHOLD = min(_BOX_THRESHOLD, _cfg.PPOCR_WIDE_BOX_THRESHOLD)
+_WIDE_MIN_ASPECT    = _cfg.PPOCR_WIDE_MIN_ASPECT
+_WIDE_MIN_AREA      = _cfg.PPOCR_WIDE_MIN_AREA
+_WIDE_MIN_Y         = _cfg.PPOCR_WIDE_MIN_Y
+_SCAN_TOP           = _cfg.TEXTLESS_SCAN_TOP
 
 # NOTE: RapidOCR does not actually honour this — the detector receives the poster
 # at its native size rounded up to multiples of 32 (a 500x750 poster arrives as
@@ -169,7 +134,7 @@ def text_detection_status() -> str:
 def _valid_model(path: str) -> bool:
     if not os.path.exists(path) or os.path.getsize(path) < 1_000_000:
         return False
-    if os.environ.get("PPOCR_SKIP_MODEL_HASH", "").lower() in ("1", "true", "yes"):
+    if _cfg.PPOCR_SKIP_MODEL_HASH:
         return True
     digest = hashlib.sha256()
     with open(path, "rb") as model_file:

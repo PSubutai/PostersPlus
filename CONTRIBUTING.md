@@ -29,6 +29,28 @@ the full rules. The two that trip people up:
 Contributed languages must be Latin-script — the bundled font has no CJK or
 Arabic glyphs and no right-to-left shaping.
 
+## Adding a setting
+
+Every operator setting is declared once, in `config.py`, through
+`settings.env()`:
+
+```python
+FOO_LIMIT = int(_env("FOO_LIMIT", "10", group="Caching", kind="int",
+                     label="Foo limit", help="What it does and when to change it.",
+                     min=0, max=100, advanced=True))
+```
+
+That one call reads the value (saved settings file, then environment, then the
+default) *and* registers the field the admin dashboard renders, so there is
+nothing else to wire up. `group` must be one of `settings.GROUP_ORDER`, `kind`
+one of `settings.KINDS`, and `help` is required — a test checks all three.
+Mark it `advanced=True` if it is a tuning knob nobody needs to run an
+instance; those get a `### \`KEY\`` section in `ADVANCED.md`. Everything else
+gets a `KEY=` line (with a comment) in `.env.example`. The README's settings
+reference is generated — run `python3 tools/settings_docs.py --write` — and
+`tests/test_settings_docs.py` fails if any of the three is out of step, or if
+a module reads a setting from `os.environ` behind the registry's back.
+
 ## Before opening a PR
 
 ```bash

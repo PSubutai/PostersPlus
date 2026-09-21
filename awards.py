@@ -1599,6 +1599,8 @@ def draw_award_badge(
         border_rgb = (240, 100, 100)
     elif sash_type == "trending":
         border_rgb = (160, 220, 255)
+    elif sash_type == "watchlist":
+        border_rgb = (255, 190, 90)
     else:  # "nom"
         border_rgb = (192, 192, 200)
 
@@ -2020,6 +2022,11 @@ def draw_award_sash(
     elif sash_type == "trending":
         hi, lo        = (90, 170, 255, 255), (50, 110, 190, 255)
         border_colour = (160, 220, 255, 255)
+    elif sash_type == "watchlist":
+        # Amber: warm like the gold win sash but clearly not it, and unlike
+        # the red alert tier, so a queued title reads as "mine", not "urgent".
+        hi, lo        = (235, 150, 40, 255), (170, 100, 20, 255)
+        border_colour = (255, 190, 90, 255)
     else:  # "nom"
         hi, lo        = (180, 180, 190, 255), (110, 110, 120, 255)
         border_colour = (192, 192, 200, 255)

@@ -4,11 +4,11 @@ Tuning and debugging variables that are **not** in `.env.example`. These all hav
 working defaults and a running instance needs none of them.
 
 This covers the poster service. The Plex and Jellyfin sync scripts have their own
-variables (`PLEX_*`, `JELLYFIN_*`, `POSTERSPLUS_*`) documented in the README,
-as do `TMDB_LANGUAGE`, `TVDB_CONCURRENCY` and `DISCOVERY_OVERRIDES_PATH`.
+variables (`PLEX_*`, `JELLYFIN_*`, `POSTERSPLUS_*`) documented in the README.
 
 Set them the same way as anything in `.env.example`: as environment variables on
-the container, or as lines in your `.env`.
+the container, or as lines in your `.env` — or from the admin dashboard, where
+each group's *Advanced* fold lists them with this same help text.
 
 > Several of these change how posters are selected or how burned-in text is
 > detected. Those results are cached under a signature that includes the setting,
@@ -228,6 +228,42 @@ Rotten Tomatoes, Metacritic, Popcornmeter, Roger Ebert).
 
 ---
 
+## Watchlist marker
+
+The everyday settings (`WATCHLIST_SOURCE`, `SIMKL_CLIENT_ID`, `TRAKT_CLIENT_ID`, `TRAKT_USERNAME`) are in the README. These are the rest.
+
+### `WATCHLIST_REFRESH_MINUTES`
+
+How often the source is re-checked. Every cycle is one cheap call — MDBList: one page per 500 titles (counted against the key's daily quota); SIMKL: `/sync/activities`, with the lists only re-read when it reports a change; Trakt: two list calls — so a few minutes is fine if you want the marker to follow the tracker quickly.
+
+Default: `30`
+
+### `WATCHLIST_SIMKL_STATUSES`
+
+Which SIMKL lists count as "the watchlist", comma-separated: any of `plantowatch`, `watching`, `hold` (movies only have `plantowatch`; `completed` and `dropped` are accepted but rarely wanted).
+
+Default: `plantowatch`
+
+### `SIMKL_CLIENT_SECRET`
+
+Only for an AUTH V2 SIMKL app registered as *Server apps & services*, which is the one type that mints a secret and then requires it at the token endpoint. The recommended type, *TV, devices & command line*, needs nothing here — nor do V1 apps or *Mobile, desktop & browser apps*.
+
+Default: unset
+
+### `SIMKL_ACCESS_TOKEN`
+
+Skips the device/PIN flow and uses this token as-is. Never refreshed, so a V2 token goes stale after seven days; mainly for a long-lived AUTH V1 token obtained elsewhere.
+
+Default: unset
+
+### `TRAKT_ACCESS_TOKEN`
+
+Reads `/sync/watchlist` as the token's owner instead of `TRAKT_USERNAME`'s public profile — what a private profile needs. Obtain it through your own Trakt app's device flow; PostersPlus does not run one for Trakt.
+
+Default: unset
+
+---
+
 ## Cache warming
 
 ### `CACHE_WARM_AT_HOUR`
@@ -255,6 +291,16 @@ Default: `100`
 ---
 
 ## Rendering, poster selection and text detection
+
+### `DISCOVERY_OVERRIDES_PATH`
+
+JSON file that overrides the notable studio, director and cast lists behind
+those sashes, so Docker operators can customise them without editing
+`discovery.py`. See `discovery_overrides.example.json` for the format. The
+default sits inside the cache volume, so no extra mount is needed.
+
+Default: `/app/cache/discovery_overrides.json`
+
 
 ### `LOGO_CONTRAST_RESCUE`
 

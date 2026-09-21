@@ -19,6 +19,8 @@ Those not self-hosting can [visit the public instance.](https://postersplus.elfh
 
 ## Features
 
+- **Admin dashboard** - every server setting managed from `/admin` with a live status overview, restart button, and per-field provenance (saved / env / default). One env var to unlock it; the rest can leave your compose file for good.
+
 - **Ratings overlay** - weighted composite score from Letterboxd, Trakt, Rotten Tomatoes, IMDb, Metacritic, TMDb, MyAnimeList, AniList, Kitsu, and more. Four display modes (Score Bar, Clean, Minimalist, Bar) with many sub-modes. Minimalist mode includes Year, Rating, Both, and Split layouts with optional centring and independently styled field/rating separators. Three built-in colour palettes plus custom score-to-hex palettes, poster-aware overlays, configurable text and glow colours, and optional glow on high scores.
 
 - **Award sashes** - Oscar Best Picture, Golden Globe (film and TV, five major categories), Emmy Outstanding Series (Drama, Comedy, Limited), festival prizes, notable studios/directors/cast, trending titles, TV lifecycle signals (new season, returning, season finale), premieres, just-added digital movies, cult classics, true stories, and Metacritic Must-See. Priority order is fully configurable and any sash can be disabled. Sashes can also render as a modern filled or frosted notch with independent size, inset, padding, text colour, and artwork-aware tint controls.
@@ -93,11 +95,11 @@ services:
     volumes:
       - ./postersplus-cache:/app/cache
     environment:
-      - TMDB_API_KEY=your_tmdb_key
-      - MDBLIST_API_KEY=your_mdblist_key
-      - TEXTLESS_TEXT_DETECTION=true # set off for faster renders at the cost of potentially printing double logos
-      - ACCESS_KEY=youraccesskey # Highly suggested if exposing to the internet.*
-      # See .env.example for all available options
+      - ADMIN_KEY=a-long-random-string   # unlocks the admin dashboard at /admin, where everything else can be set
+      - ACCESS_KEY=youraccesskey         # highly suggested if exposing to the internet*
+      # Or set keys and options here instead — see .env.example for the full list:
+      # - TMDB_API_KEY=your_tmdb_key
+      # - MDBLIST_API_KEY=your_mdblist_key
 ```
 
 Then start it:
@@ -106,14 +108,16 @@ Then start it:
 docker compose up -d
 ```
 
-Once your reverse proxy is set up, open the configurator at your public HTTPS domain to tune your settings and generate a URL template for AIOMetadata. The URL it generates is based on the domain you access it from.
+Open `http://your-host:8000/admin`, enter the admin key, add your TMDB and MDBList keys under **API keys**, save, and use the **Restart now** button. Every other option in this README's [settings reference](#settings-reference) is there too, grouped and explained in place.
+
+Once your reverse proxy is set up, open the configurator at your public HTTPS domain to tune your poster style and generate a URL template for AIOMetadata. The URL it generates is based on the domain you access it from.
 
 ### Building from source
 
 ```bash
 git clone https://github.com/UmbraProjects/PostersPlus.git
 cd PostersPlus
-cp .env.example .env   # fill in your keys
+cp .env.example .env   # fill in ADMIN_KEY, or the API keys directly
 docker compose up -d --build
 ```
 
@@ -121,77 +125,155 @@ docker compose up -d --build
 
 ## Configuration
 
-All configuration is done via environment variables. Copy `.env.example` to `.env` and fill in your values. Every variable is optional - API keys can be omitted from the server and passed per-request as URL parameters instead.
+There are two ways to configure an instance, and they can be mixed:
 
-`.env.example` covers the settings most instances actually set. Tuning knobs — OCR thresholds, cache TTLs, logo sizing, anime providers, poster selection — live in [ADVANCED.md](ADVANCED.md), which you should not need to read to run PostersPlus.
+1. **The admin dashboard** at `/admin` — set one variable, `ADMIN_KEY`, and manage everything else from the browser. Recommended for self-hosters.
+2. **Environment variables** — copy `.env.example` to `.env`, or set them in your compose file. This is how it has always worked and still does.
+
+Every setting is optional: API keys can be omitted from the server and passed per-request as URL parameters instead. When the same setting is in both places, **the dashboard wins** and the field says so.
+
+### Admin dashboard
+
+Set `ADMIN_KEY` to a long random string (12 characters minimum), recreate the container, and open `http://your-host:8000/admin`. It has two halves:
+
+- **Overview** — live instance state: rendered-poster and cache counts, DB size, renders in flight against the concurrency cap, each MDBList key's remaining daily quota and cooldown, the watchlist snapshot, cache warming, the IMDb dataset, and which trending sources are in use. The same data as `GET /stats`, laid out. A **Restart server** button lives here too.
+- **Settings** — every setting in the [reference](#settings-reference) below, grouped the same way, with its help text, validation (ranges, choices, URLs) and a chip saying where the current value comes from: **saved** (this dashboard), **env** (`.env` / compose) or **default**. Advanced settings sit behind a fold in each group. The **Watchlist** group also holds the [SIMKL account](#watchlist-marker) panel: link the account by code, see whether it is linked, unlink it.
+
+**What saving does.** Saved values go to `settings.json` in the cache volume; the dashboard never edits your `compose.yaml` or `.env` (it cannot see them). At startup the file is read alongside the environment and takes precedence per key, so a change made here always takes effect, and an env line you already have keeps working until you save over it. *Reset* on a field drops the saved value and the env or default shows through again.
+
+**Restart to apply.** Every module reads its configuration at startup, so saves apply on the next start. The dashboard says which settings are waiting and shows a *Restart required* notice with a **Restart now** button: the server stops gracefully (in-flight renders finish) and the container's restart policy starts it again — `compose.yaml` ships with `restart: unless-stopped`; without a policy the container stays stopped and you `docker compose up -d` it by hand. The page waits for the server to come back and reloads itself.
+
+**Security.** `ADMIN_KEY` is deliberately env-only, and it is not `ACCESS_KEY`: that one travels in every poster URL your clients hold, so it is shared with all of your users, not just you. A key shorter than 12 characters leaves the dashboard disabled, with the reason in the log; without one, `/admin` explains how to turn it on. The API takes the key only in the `X-Admin-Key` header (never a query parameter, which would end up in access logs); wrong keys are slowed down and eight failures from one address lock it out for ten minutes. Secrets are never sent back to the page — a set key shows as `Set (…ab12)` and can be replaced or cleared. Put the instance behind HTTPS before using this over the internet, as with `ACCESS_KEY`.
+
+### Settings reference
+
+<!-- settings-reference:start — generated by tools/settings_docs.py, do not edit by hand -->
+
+Grouped as the admin dashboard groups them. Defaults apply when neither the dashboard nor the environment sets a value. Advanced settings — tuning knobs a running instance needs none of — are in [ADVANCED.md](ADVANCED.md) and behind each group's *Advanced* fold in the dashboard.
+
+#### API keys
 
 | Variable | Default | Description |
 |---|---|---|
-| `TMDB_API_KEY` | - | TMDB API key for poster/metadata fetching |
-| `MDBLIST_API_KEY` | - | MDBList API key for ratings and award data |
-| `MDBLIST_API_KEY_2` | - | Optional second MDBList key. Retried in the same request when the primary key is rate-limited (a key that has spent its daily quota stays parked until MDBList's reset) |
-| `MDBLIST_CONCURRENCY` | `3` | Maximum concurrent outbound MDBList requests per worker |
-| `TVDB_API_KEY` | - | Optional TheTVDB v4 API key. When set, TVDB is used as a *fallback* art source (logos, backdrops, optionally posters) for titles where TMDB returns nothing usable — reducing fallbacks to text titles / genre canvas. Leave blank to disable entirely |
-| `TVDB_SUBSCRIBER_PIN` | - | Only required for user-supported ("subscriber") TVDB keys; leave blank for company keys |
-| `TVDB_USE_LOGOS` | `true` | Use TVDB clearlogos when TMDB + Metahub have none |
-| `TVDB_USE_BACKDROPS` | `true` | Use TVDB backgrounds (fanart) when no textless TMDB poster/backdrop exists |
-| `TVDB_USE_POSTERS` | `false` | Use TVDB posters as a last resort. Off by default because they often carry burned-in title text; only used when text detection confirms a clean image |
-| `TVDB_LOGO_PRIORITY` | `3` | Where a TVDB clearlogo sits in the logo chain: `1` = before TMDB and Metahub, `2` = after TMDB but before Metahub, `3` = last resort (only when both have nothing). TVDB logos are often higher quality, so `1`/`2` improve results but change logos currently sourced from TMDB/Metahub |
-| `TVDB_CONCURRENCY` | `3` | Maximum concurrent outbound TVDB requests per worker |
-| `TVDB_ARTWORK_CACHE_DURATION` | `14` | Days to cache a title's resolved TVDB id and artwork listing |
-| `TVDB_NEG_CACHE_DURATION` | `3` | Days to cache a "no TVDB match / no art" result, so newly-added TVDB art is picked up sooner than a positive match |
-| `TVDB_TYPES_CACHE_DURATION` | `30` | Days to cache the TVDB artwork-type catalogue, which rarely changes |
-| `ACCESS_KEY` | - | Shared secret for request authentication. Leave blank to allow open access |
-| `WORKERS` | `1` | Uvicorn worker processes. One worker avoids duplicate uncached renders, scans, and API work across processes |
-| `POSTER_RENDER_CONCURRENCY` | `8` | Max uncached poster renders in flight per worker. Cache hits are never held back; a burst of fresh renders (a cold catalog grid) queues past this rather than exhausting the upstream connection pool. Raise on a machine with headroom, lower on a small VPS |
-| `AIOSTREAMS_URL` | - | Base URL of your AIOStreams instance (used when `QUALITY_SOURCE=aiostreams`) |
-| `AIOSTREAMS_AUTH` | - | AIOStreams credentials as Base64 `user:password` |
-| `QUALITY_SOURCE` | `aiostreams` | Quality data source: `aiostreams`, `scraper`, or `qualicache` |
-| `SCRAPER_URL` | - | Base URL of a Stremio stream addon (e.g. `https://torrentio.strem.fun/`). Only used when `QUALITY_SOURCE=scraper`. Standalone addons like Torrentio and Comet work best; Stremthru Torz requires auth and should be used via AIOStreams instead |
-| `QUALICACHE_URL` | - | Base URL of your QualiCache instance (e.g. `http://qualicache:8000`). Only used when `QUALITY_SOURCE=qualicache` |
-| `QUALICACHE_API_KEY` | - | Must match QualiCache's own `ACCESS_KEY`. Leave blank if QualiCache is unauthenticated |
-| `QUALICACHE_MIN_TRUST` | `high` | Lowest QualiCache release-group tier to accept: `high`, `medium`, or `low` |
-| `QUALITY_OLD_CACHE_DURATION` | `90` | Days to cache quality data for titles older than 2 weeks |
-| `QUALITY_BG_CONCURRENCY` | `5` | Max concurrent background quality fetches |
-| `QUALITY_WAIT_TIMEOUT` | `30` | Maximum seconds to wait when a request enables synchronous quality fetching |
-| `CDN_CACHE_TTL` | `0` | Adds `Cache-Control: public, max-age=N` to poster responses, capped at the composite's remaining life. `auto` advertises that remaining life with no fixed ceiling, so a trending poster expires in a day and a settled title lasts the full `COMPOSITE_CACHE_TTL`. Set to `0` to disable |
-| `IMAGE_FORMAT` | `webp` | Output format for composited posters: `webp` or `jpeg`. WebP gives smaller files at equivalent quality |
-| `JPEG_QUALITY` | `85` | JPEG output quality for composited posters (70–95), used when `IMAGE_FORMAT=jpeg`. Raise to `92` for higher fidelity; lower to reduce file size |
-| `WEBP_QUALITY` | `85` | WebP output quality for composited posters (70–95), used when `IMAGE_FORMAT=webp` (the default) |
-| `CINEMA_MAX_AGE_YEARS` | `3` | Movies whose only known release is a theatrical date older than this are treated as "Streaming" rather than "Cinema" — guards against stale TMDB data missing a physical/digital date. `0` disables the gate |
-| `TRENDING_FETCH_TIME` | - | Local time of day (e.g. `04:00`) to refresh the trending-titles list used by the Trending sashes. Empty = refresh on a rolling 24-hour interval instead of a fixed time |
-| `TRENDING_FETCH_TIMEZONE` | `UTC` | Timezone for `TRENDING_FETCH_TIME`, e.g. `America/New_York` |
-| `TRENDING_FETCH_COUNT` | `40` | Number of top trending titles that qualify for the **Trending** sash |
-| `TRENDING_BROAD_FETCH_COUNT` | `100` | Number of additional lower-ranked trending titles (ranks past `TRENDING_FETCH_COUNT`, up to this count) that qualify for the lower-priority **Trending (Broad)** sash |
-| `TRENDING_SOURCE_MOVIE` | - | Optional MDBList page or TMDB-shaped JSON endpoint whose order replaces TMDB's global movie trending list for both sashes and cache warming |
-| `TRENDING_SOURCE_TV` | - | Optional MDBList page or TMDB-shaped JSON endpoint whose order replaces TMDB's global TV trending list for both sashes and cache warming |
-| `TMDB_IMAGE_CACHE_JITTER_DAYS` | `10` | +/- half this many days of per-title jitter applied to TMDB poster/logo cache durations, so a large batch cached at once doesn't all expire the same day |
-| `COMPOSITE_CACHE_TTL` | `604800` | Seconds to keep a rendered poster before re-rendering (default 7 days) |
-| `COMPOSITE_CACHE_TTL_JITTER` | `172800` | +/- half this many seconds of per-title jitter applied to `COMPOSITE_CACHE_TTL`, so a large batch of composites rendered together doesn't all expire (and re-render) at once |
-| `COMPOSITE_MAX_ENTRIES` | `0` | Cap on composite cache entries (SQLite). `0` = no cap |
-| `COMPOSITE_MEM_ENTRIES` | `500` | Fully-rendered composites kept in the in-memory LRU (L1) cache, served without a SQLite read. ~100–300 KB each. `0` disables the in-memory cache |
-| `DISABLE_COMPOSITE_CACHE` | - | Set to `true` to skip composite cache reads and writes entirely. Every request re-renders from scratch. For development only |
-| `LOGO_CONTRAST_RESCUE` | `false` | Recolour a flat logo (white/black/accent) when it blends into the poster background. Multi-colour/outline logos are never touched. Experimental, off by default while tested; set `true` to enable |
-| `LOGO_STRETCH_DISABLED` | `true` | Fill-stretch is off by default; every logo is kept at its true clamped size. Set `false` to enable the stretch below |
-| `LOGO_STRETCH_FACTOR` | `1.2` | When stretching is enabled, a slim logo is enlarged toward its size cap by up to this factor (one axis only). `1.0` = no enlargement |
-| `DEBUG_LOGO_SIZING` | `false` | Log per-logo sizing telemetry at INFO level. For tuning only |
-| `TMDB_POSTER_MIN_VOTES` | `3` | Prefer textless posters with at least this many votes when they remain competitively rated |
-| `TMDB_POSTER_MAX_SCORE_DROP` | `1.0` | Maximum rating downgrade allowed when preferring a textless poster that meets the vote minimum |
-| `RATING_MIN_VOTES` | `10` | Ignore provider ratings below this vote count. Roger Ebert is exempt |
-| `TEXTLESS_TEXT_DETECTION` | `true` | Detect burned-in title text on posters TMDB mislabelled as "textless" and skip our own logo so the title isn't doubled. Set `false` to opt out |
-| `TEXTLESS_DETECTION_MAX_VOTES` | `3000` | Foreground OCR vote limit. Higher-vote assets render without waiting, skip composite caching, and enter the idle background scan queue. Raise for foreground accuracy; lower for faster stale-cache bursts |
-| `TEXTLESS_FAKE_REPORT` | `true` | Record OCR-rejected TMDB posters in a deduplicated human-review report |
-| `TEXTLESS_FAKE_REPORT_PATH` | `/app/cache/fake_textless_posters.txt` | Report location. The default persists in the existing cache volume |
-| `PPOCR_BOX_THRESHOLD` | `0.70` | Minimum PP-OCR text-box confidence. Higher is stricter; changing it invalidates cached detections and composites |
-| `PPOCR_WIDE_BOX_THRESHOLD` | `0.30` | Lower confidence accepted for wide, title-shaped text regions |
-| `PPOCR_WIDE_MIN_ASPECT` | `3.0` | Minimum width-to-height ratio for the lower-confidence title fallback |
-| `PPOCR_WIDE_MIN_AREA` | `0.01` | Minimum fraction of image area occupied by a lower-confidence title box |
-| `PPOCR_WIDE_MIN_Y` | `0.55` | Minimum vertical centre for the poster-only geometric fallback when OCR cannot read a centred title block |
-| `TEXTLESS_DETECTION_CONCURRENCY` | `1` | Independent PP-OCR sessions in a dedicated executor. Sessions split the ONNX thread budget rather than adding to it, so raising this makes each scan slower and only pays off during a cold-cache sweep; each extra session costs roughly 50 MB. Capped at the container's real CPU budget |
-| `TEXTLESS_SCAN_TOP` | `0.08` | Fraction of poster height skipped from the top before counting text (covers top/middle/bottom titles; ignores top-edge logos) |
-| `BAKE_PPOCR_MODEL` | `true` | Build-time only. Bake the ~4.6MB PP-OCRv5 Mobile model into the image |
-| `DEFAULT_LOGO_LANGUAGE` | `en` | ISO language/locale code for title logos and poster language preference. `TMDB_LANGUAGE` is also accepted as a fallback alias. Region-qualified locales (`fr-fr`, `es-es`, `es-mx`, `pt-br`) select artwork tagged for that region only, falling back to English rather than to the bare language. |
-| `DISCOVERY_OVERRIDES_PATH` | `/app/cache/discovery_overrides.json` | Optional custom path for discovery list overrides |
+| `TMDB_API_KEY` | - | Fetches posters, logos and metadata. Required unless every client passes its own tmdb_key. |
+| `MDBLIST_API_KEY` | - | Ratings, awards, keywords and age ratings. Without it the score reads N/A and the MDBList-only sashes are unavailable. |
+| `MDBLIST_API_KEY_2` | - | Retried in the same request when the primary key is rate-limited; a key that has spent its daily quota stays parked until MDBList's reset. |
+| `TVDB_API_KEY` | - | Optional TheTVDB v4 key. When set, TVDB is a fallback art source (logos, backdrops, optionally posters) for titles where TMDB returns nothing usable, reducing fallbacks to text titles and genre canvases. Blank disables it entirely. |
+| `TVDB_SUBSCRIBER_PIN` | - | Only for user-supported (subscriber) TVDB keys; leave blank for company keys. |
+
+#### Access & serving
+
+| Variable | Default | Description |
+|---|---|---|
+| `ADMIN_KEY` | - | Enables the [admin dashboard](#admin-dashboard) at `/admin`. At least 12 characters. Env-only: it is the one setting the dashboard cannot manage, because it is what protects the dashboard. |
+| `ACCESS_KEY` | - | Shared secret every poster and configurator request must carry as access_key. Leave blank for open access. |
+| `CDN_CACHE_TTL` | `auto` | Cache-Control: public, max-age=N on poster responses, capped at the composite's remaining life so a cached copy never outlives the trending rank or release status baked into it. auto (the default) advertises that remaining life with no fixed ceiling: a trending poster expires in a day, a settled title lasts the full composite TTL. A number caps it; 0 sends no Cache-Control. |
+
+#### Quality source
+
+| Variable | Default | Description |
+|---|---|---|
+| `QUALITY_SOURCE` | `aiostreams` | Where stream-quality badges come from. QualiCache never scrapes on the request path; a cold title returns pending instead of blocking. One of `aiostreams`, `scraper`, `qualicache`. |
+| `AIOSTREAMS_URL` | - | Base URL of your AIOStreams instance. Used when the quality source is aiostreams. Only used when `QUALITY_SOURCE` is `aiostreams`. |
+| `AIOSTREAMS_AUTH` | - | AIOStreams credentials as Base64 user:password. Only used when `QUALITY_SOURCE` is `aiostreams`. |
+| `SCRAPER_URL` | - | Base URL of a Stremio stream addon, e.g. https://torrentio.strem.fun/. Only used when the quality source is scraper. Standalone addons like Torrentio and Comet work best; Stremthru Torz requires auth and should be used through AIOStreams instead. Only used when `QUALITY_SOURCE` is `scraper`. |
+| `QUALICACHE_URL` | - | Base URL of a QualiCache instance. Only used when the quality source is qualicache. Only used when `QUALITY_SOURCE` is `qualicache`. |
+| `QUALICACHE_API_KEY` | - | Must match QualiCache's own ACCESS_KEY when it has one. Only used when `QUALITY_SOURCE` is `qualicache`. |
+| `QUALICACHE_MIN_TRUST` | `high` | Lowest release-group tier to accept from QualiCache. Only used when `QUALITY_SOURCE` is `qualicache`. One of `high`, `medium`, `low`. |
+
+#### Output
+
+| Variable | Default | Description |
+|---|---|---|
+| `IMAGE_FORMAT` | `webp` | Output format for composited posters. WebP is smaller at the same quality. One of `webp`, `jpeg`. |
+| `JPEG_QUALITY` | `85` | JPEG output quality (70-95), used when the image format is jpeg. Raise to 92 for higher fidelity; lower to reduce file size. |
+| `WEBP_QUALITY` | `85` | WebP output quality (70-95), used when the image format is webp (the default). Higher is better quality and larger files. |
+| `DEFAULT_LOGO_LANGUAGE` | `en` | ISO language or locale code for title logos and poster language preference when a request names none. Region-qualified locales (fr-fr, es-es, es-mx, pt-br) select artwork tagged for that region only, falling back to English rather than to the bare language. TMDB_LANGUAGE is accepted as a legacy alias in the environment. |
+
+#### Trending
+
+| Variable | Default | Description |
+|---|---|---|
+| `TRENDING_FETCH_TIME` | - | Local time of day (e.g. 04:00) to refresh the trending list used by the Trending sashes. Blank refreshes on a rolling 24-hour interval from startup instead. |
+| `TRENDING_FETCH_TIMEZONE` | `UTC` | IANA timezone for the fetch time, e.g. America/New_York. |
+| `TRENDING_FETCH_COUNT` | `40` | Ranks 1 to this number get the Trending sash. |
+| `TRENDING_BROAD_FETCH_COUNT` | `100` | Lower-ranked trending titles, from the trending count up to this rank, qualify for the lower-priority Trending (Broad) sash. |
+| `TRENDING_SOURCE_MOVIE` | - | An MDBList list page or any TMDB-shaped JSON endpoint whose order replaces TMDB's global movie trending list. Blank keeps TMDB's list. |
+| `TRENDING_SOURCE_TV` | - | An MDBList list page or any TMDB-shaped JSON endpoint whose order replaces TMDB's global TV trending list for both sashes and cache warming. Blank keeps TMDB's list. |
+
+#### Watchlist
+
+| Variable | Default | Description |
+|---|---|---|
+| `WATCHLIST_SOURCE` | - | Self-hosted only: marks every title in one user's watchlist with a Watchlist sash. mdblist (the watchlist of the MDBList key's account, also the free route for Trakt, which MDBList mirrors), simkl, trakt, or any MDBList list page URL. Blank disables the feature. |
+| `WATCHLIST_REFRESH_MINUTES` | `30` | How often the watchlist source is re-checked. Each check is one cheap call (one MDBList page per 500 titles; SIMKL's activities timestamp, with the list only re-read when it changed; two Trakt calls). Only used when `WATCHLIST_SOURCE` is set. |
+| `SIMKL_CLIENT_ID` | - | From a free app at simkl.com/settings/developer. Register it as "TV, devices & command line": PostersPlus links by code (the device/PIN flow), so that type needs no secret and no redirect URL. The account is then linked once from the admin dashboard's Watchlist group. Only used when `WATCHLIST_SOURCE` is `simkl`. |
+| `TRAKT_CLIENT_ID` | - | From an existing Trakt API app (creating one needs Trakt VIP). Only used when `WATCHLIST_SOURCE` is `trakt`. |
+| `TRAKT_USERNAME` | - | The public profile whose watchlist is read. Only used when `WATCHLIST_SOURCE` is `trakt`. |
+
+#### Ratings
+
+| Variable | Default | Description |
+|---|---|---|
+| `IMDB_DATASET_ENABLED` | `false` | Download IMDb's free, no-key, daily-refreshed ratings dataset into a local table so the imdb rating weight can be served without MDBList. Selected per request or instance with imdb_rating_source=dataset. `true` or `false`. |
+| `IMDB_DATASET_PATH` | `/app/cache/imdb_ratings.db` | Where the dataset's SQLite table is kept. Only used when `IMDB_DATASET_ENABLED` is `true`. |
+| `IMDB_DATASET_REFRESH_HOURS` | `24` | How often the dataset is re-downloaded. Only used when `IMDB_DATASET_ENABLED` is `true`. |
+| `IMDB_DATASET_MIN_VOTES` | `10` | Titles with fewer IMDb votes than this are ignored, as the rating minimum votes does for MDBList sources. Only used when `IMDB_DATASET_ENABLED` is `true`. |
+| `RATING_MIN_VOTES` | `10` | A rating source with fewer votes than this is ignored for the weighted score. |
+
+#### Caching
+
+| Variable | Default | Description |
+|---|---|---|
+| `QUALITY_OLD_CACHE_DURATION` | `90` | Stream quality for older titles is stable, so it is cached this long; new titles keep a 1-day window. |
+| `COMPOSITE_CACHE_TTL` | `604800` | How long a fully rendered poster is kept before it is re-rendered. Default 604800 (7 days). |
+| `COMPOSITE_MAX_ENTRIES` | `0` | Oldest entries are evicted past this many. 0 relies on the TTL alone. |
+
+#### Cache warming
+
+| Variable | Default | Description |
+|---|---|---|
+| `CACHE_WARM_ENABLED` | `false` | Pre-populate the TMDB and MDBList caches for trending, popular and catalog titles in the background. Off by default; enable once the server keys' quotas are understood. `true` or `false`. |
+| `CACHE_WARM_TMDB_BUDGET` | `2000` | Ceiling on actual TMDB API calls per warm cycle; cache hits do not count. Only used when `CACHE_WARM_ENABLED` is `true`. |
+| `CACHE_WARM_MDBLIST_BUDGET` | `500` | Ceiling on actual MDBList calls per warm cycle. Only used when `CACHE_WARM_ENABLED` is `true`. |
+| `CACHE_WARM_MDBLIST_RESERVE` | `300` | MDBList's limit is a per-key daily quota (1,000/day on a free key) shared with live poster requests. The warmer stops spending a key once its remaining daily requests, reported by MDBList on every response, fall to this floor, so a cycle cannot leave the rest of the day without ratings. 0 disables the floor. Only used when `CACHE_WARM_ENABLED` is `true`. |
+| `CACHE_WARM_INTERVAL_HOURS` | `24` | Hours between the end of one warm cycle and the start of the next. Ignored after the first cycle once a warm hour is set. Only used when `CACHE_WARM_ENABLED` is `true`. |
+
+#### TVDB fallback art
+
+| Variable | Default | Description |
+|---|---|---|
+| `TVDB_USE_LOGOS` | `true` | Use TVDB clearlogos when TMDB and Metahub have none. `true` or `false`. |
+| `TVDB_USE_BACKDROPS` | `true` | Use TVDB backgrounds when no textless TMDB poster or backdrop exists. `true` or `false`. |
+| `TVDB_USE_POSTERS` | `false` | Use TVDB posters as a last resort. Off by default because they often carry burned-in title text; only used when text detection confirms a clean image. `true` or `false`. |
+| `TVDB_LOGO_PRIORITY` | `3` | Where a TVDB clearlogo sits in the logo chain: 1 before TMDB and Metahub, 2 after TMDB but before Metahub, 3 last resort (only when both have nothing). TVDB logos are often higher quality, so 1 or 2 improve results but change logos currently sourced from TMDB or Metahub. One of `1`, `2`, `3`. |
+| `TVDB_CONCURRENCY` | `3` | Maximum concurrent outbound TVDB requests per worker. |
+
+#### Anime sources
+
+| Variable | Default | Description |
+|---|---|---|
+| `ANIME_SOURCES_ENABLED` | `true` | Serve art, titles, genres and a community score from AniList and Kitsu when a client passes anilist_id or kitsu_id. No id conversion is performed, so clients that only speak imdb/tmdb are unaffected. Neither provider needs an API key. `true` or `false`. |
+| `ANIME_COMPOSITE_LOGO` | `true` | Composite a title logo over anime cover art. That art rarely carries a logotype (or only a small block of Japanese corner text), so a proper logo is usually an improvement; off serves the provider's art untouched. Logos come from TMDB, Metahub or TVDB, so the request needs a tmdb_id or imdb_id. `true` or `false`. |
+
+#### Text detection
+
+| Variable | Default | Description |
+|---|---|---|
+| `TEXTLESS_TEXT_DETECTION` | `true` | Detect title text on posters TMDB mislabelled as textless and skip compositing a logo over them. Uses the PP-OCRv5 Mobile detector. `true` or `false`. |
+| `TEXTLESS_DETECTION_MAX_VOTES` | `3000` | Foreground OCR vote limit. Titles with more TMDB votes render without waiting, skip composite caching, and enter the idle background scan queue. Raise for foreground accuracy; lower for faster stale-cache bursts. Changing it invalidates cached composites. Only used when `TEXTLESS_TEXT_DETECTION` is `true`. |
+
+#### Performance
+
+| Variable | Default | Description |
+|---|---|---|
+| `WORKERS` | `1` | Uvicorn worker processes. One worker avoids duplicate uncached renders, scans and API work across processes. |
+| `QUALITY_BG_CONCURRENCY` | `5` | Caps concurrent background quality fetches when many uncached titles appear at once. |
+| `QUALITY_WAIT_TIMEOUT` | `30` | How long a request with wait_for_quality=true waits for the scraper. |
+| `MDBLIST_CONCURRENCY` | `3` | Maximum concurrent outbound MDBList requests per worker. MDBList drops requests past roughly 3 per key. |
+| `POSTER_RENDER_CONCURRENCY` | `8` | Maximum uncached poster renders in flight per worker. Cache hits are never held back; a burst of fresh renders (a cold catalog grid) queues past this rather than exhausting the upstream connection pool. Raise on a machine with headroom, lower on a small VPS. |
+
+<!-- settings-reference:end -->
 
 > CPU guidance: keep `WORKERS × TEXTLESS_DETECTION_CONCURRENCY` at or below the CPU cores available to the container. Larger values can oversubscribe CPU, duplicate uncached work across workers, and reduce sustained throughput.
 
@@ -405,6 +487,8 @@ These are gated behind `access_key` when one is configured:
 
 - `GET /stats`: cache row counts / sizes plus live runtime state (in-flight renders, background fetches, MDBList key cooldowns). Handy for spotting issues before they surface.
 - `GET /debug/fallback-gallery`: a gallery of every genre's no-art fallback card (mascot + genre font), also reachable via the **Preview fallback art** button in the configurator's Logo section.
+- `GET /admin/api/status`, `GET`/`PUT /admin/api/settings`, `POST /admin/api/restart`: the [admin dashboard](#admin-dashboard)'s API, gated by `ADMIN_KEY` (header `X-Admin-Key`), not `access_key`.
+- `GET /admin/api/watchlist`: the [watchlist marker](#watchlist-marker)'s snapshot state and, for SIMKL, whether the account is linked and any link code awaiting approval. `POST /admin/api/watchlist/simkl/link` issues a code now rather than on the loop's hourly re-prompt; `POST /admin/api/watchlist/simkl/unlink` forgets the account (revoking a V2 grant at SIMKL), drops the snapshot and re-renders the posters that carried the sash. All three back the dashboard's SIMKL panel and take the admin key like the rest.
 
 ---
 
@@ -414,6 +498,7 @@ Sashes display contextual metadata about a title - awards, festival recognition,
 
 | Sash | Triggers on |
 |---|---|
+| Watchlist | The title is in the instance's configured watchlist (`WATCHLIST_SOURCE`, self-hosted only). First in the default order — inert on instances without one |
 | Oscar Winner, Emmy Winner | Oscar Best Picture winner, Emmy Outstanding Drama/Comedy/Limited winner |
 | Globe Winner | Golden Globe winner (film drama/comedy, TV drama/comedy/limited) |
 | Festival Prize | The top prize by name (Palme d'Or, Golden Lion, Golden Bear, Golden Leopard, Sundance GJ), or "Cannes Winner"-style wording for any other prize at those five festivals |
@@ -446,6 +531,23 @@ In Notch mode, the label is sized from the notch height, so `sash_badge_size_h` 
 ### Custom Trending Sources
 
 Set `TRENDING_SOURCE_MOVIE` and/or `TRENDING_SOURCE_TV` to an ordinary MDBList page URL or any endpoint returning TMDB-shaped `{"results": [{"id": 1234}]}` JSON. The source order becomes the ranking for both Trending sashes and cache warming. Movie and TV sources are independent; leave either one empty to keep TMDB's global list for that media type. Entries must contain numeric TMDB ids.
+
+### Watchlist Marker
+
+Self-hosted instances can mark every title in **one** user's watchlist with an amber **Watchlist** sash. It is a single list for the whole instance by design: the rendered-poster cache is shared by every client of an instance, so a per-user watchlist would fragment it per user and multiply upstream quota. That also makes it a poor fit for the public instance, which leaves it unset.
+
+Set `WATCHLIST_SOURCE` to one of:
+
+| Value | What it reads | What you need |
+|---|---|---|
+| `mdblist` | The MDBList watchlist of the account behind `MDBLIST_API_KEY` | Nothing extra. **Trakt users:** enable Trakt sync in MDBList's preferences and MDBList mirrors your Trakt watchlist here — Trakt's own API now needs a VIP-gated app key, so this is the free route |
+| `simkl` | The account's *Plan to Watch* list (`WATCHLIST_SIMKL_STATUSES` adds `watching` / `hold`) | A free SIMKL app: create one at [simkl.com/settings/developer](https://simkl.com/settings/developer/), choosing **TV, devices & command line** — PostersPlus links by code, so that type needs no secret and no redirect URL (pick **AUTH V2** if offered; V1 still works but retires around April 2027) — and set `SIMKL_CLIENT_ID`. Then open the [admin dashboard](#admin-dashboard)'s **Watchlist** group: a *SIMKL account* panel offers a link code; open the link, sign in, approve, and the panel flips to linked. (The same link and code are printed in the container log, which is the route without an `ADMIN_KEY`.) Tokens live in the cache volume and V2 tokens refresh themselves. Only an app registered as *Server apps & services* also needs `SIMKL_CLIENT_SECRET` |
+| `trakt` | `TRAKT_USERNAME`'s watchlist | `TRAKT_CLIENT_ID` from an existing Trakt API app (creating one requires Trakt VIP as of August 2026). Reads the public profile with no OAuth; a private profile needs `TRAKT_ACCESS_TOKEN` too |
+| an MDBList list URL | That list, via its JSON export — a shared household "to watch" list, for example | Nothing; public lists need no key |
+
+The same panel has an **Unlink account** button once linked: it forgets the token, takes the sash off every poster that had it, and offers a new code — for switching accounts, or moving from a V1 app to a V2 one. (A V2 grant is revoked at SIMKL as well; a V1 token has no revoke endpoint, so remove PostersPlus at simkl.com/settings/connected-apps if you want it gone there too.) Linking is an operator action, which is why it lives behind `ADMIN_KEY` rather than in the configurator: the link code is withheld from users of the instance, since approving it with their own account would point the instance at their watchlist. The configurator only shows which source is configured and how many titles it holds.
+
+The list is re-checked every `WATCHLIST_REFRESH_MINUTES` (default 30). Each check is cheap — one MDBList page per 500 titles, SIMKL's tiny `/sync/activities` call with the list itself only re-read when it changed, two Trakt calls — and when a title is added or removed, only the cached posters for *that* title are re-rendered, so the marker follows the tracker within one interval. The snapshot survives restarts. The sash is first in the default priority (a queued title beats an Oscar winner); drag it lower in the configurator if you would rather keep the prestige sashes on top. Plex/Jellyfin users need to re-run the sync script to push the updated posters.
 
 ### Customising Directors, Studios, and Cast
 
@@ -511,17 +613,7 @@ PostersPlus uses SQLite (WAL mode) for metadata and rendered-poster caching, plu
 
 An optional background task that proactively populates the TMDB metadata/image/logo cache and the MDBList rating/award cache for a mix of currently-trending, popular, and top-rated/now-playing/on-the-air titles, plus any Stremio addon catalogs you point it at — so the *first* real request for a hot title is already cached instead of hitting upstream APIs cold. Off by default; enable it once you understand your server API keys' rate limits, since it spends its own budget of upstream calls independent of real traffic.
 
-| Variable | Default | Description |
-|---|---|---|
-| `CACHE_WARM_ENABLED` | `false` | Master switch for the background warm cycle |
-| `CACHE_WARM_TMDB_BUDGET` | `2000` | Ceiling on TMDB metadata/image API calls per cycle. Cache hits are free and don't count against it |
-| `CACHE_WARM_MDBLIST_BUDGET` | `500` | Ceiling on MDBList rating/award API calls per cycle |
-| `CACHE_WARM_MDBLIST_RESERVE` | `300` | MDBList's limit is a per-key *daily* quota (1,000/day on a free key) shared with live poster requests. The warmer stops spending a key once its remaining daily requests (reported by MDBList on every response) fall to this floor, so a cycle can't leave the rest of the day without ratings. `0` disables the floor |
-| `CACHE_WARM_INTERVAL_HOURS` | `24` | Hours between the end of one cycle and the start of the next (ignored once `CACHE_WARM_AT_HOUR` is set, after the first cycle) |
-| `CACHE_WARM_AT_HOUR` | - | Optional fixed local hour (e.g. `4` or `4:30`) to align steady-state cycles to, instead of running exactly `CACHE_WARM_INTERVAL_HOURS` after the previous cycle. Useful for scheduling the OCR-heavy cycle off-peak. Uses the container's `TZ` (UTC if unset). The very first cycle after startup always runs shortly after boot regardless |
-| `CACHE_WARM_QUALITY_ENABLED` | `false` | Also pre-fetch quality-badge data (resolution/source/HDR tokens) for every warmed title via your configured quality source. **Warning:** against a public Stremio scraper addon (rather than your own self-hosted instance) this volume of traffic can get your server's IP rate-limited or blocked — only enable against your own AIOStreams/scraper instance |
-| `CACHE_WARM_CATALOG_URLS` | - | Comma-separated Stremio addon manifest URLs (the same install links you'd paste into Stremio). Each catalog the manifest exposes is fetched and warmed first, ahead of trending/popular/supplemental, within the budgets above |
-| `CACHE_WARM_CATALOG_MAX_ITEMS` | `100` | Max items pre-warmed per catalog (across pagination), so one large catalog can't consume the whole cycle's budget |
+The switch and its budgets are the **Cache warming** group of the [settings reference](#settings-reference) (and of the admin dashboard, whose Overview shows the last run). The MDBList budget is quota-aware: the warmer stops spending a key once its remaining daily requests fall to `CACHE_WARM_MDBLIST_RESERVE`, so a cycle cannot leave the rest of the day without ratings.
 
 Candidates are split roughly 40% trending / 30% popular / 30% supplemental (top rated, now playing, on the air), deduplicated, and any configured catalog candidates are warmed first. Cycle progress (candidates found, budgets spent) is logged at startup and after each run.
 

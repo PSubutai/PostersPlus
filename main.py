@@ -644,6 +644,8 @@ from cache import (
 )
 from digital_release import digital_release_poll_loop
 import imdb_dataset
+import watchlist
+import admin as _admin
 from imdb_dataset import imdb_dataset_refresh_loop
 import config as _cfg
 from discovery import (
@@ -4002,40 +4004,72 @@ async def _run_trending_fetch_cycle(client: httpx.AsyncClient) -> None:
     if not trending_pairs:
         return
 
+    regenerated_count = await _regenerate_cached_posters(
+        lambda parts: (parts[1], parts[2]) in trending_pairs,
+        log_prefix="Trending fetch",
+    )
+    logger.info(f"Trending fetch cycle completed. Regenerated {regenerated_count} posters.")
+
+
+async def _regenerate_cached_posters(matches, *, log_prefix: str) -> int:
+    """Drop and re-render every cached composite whose key *matches*.
+
+    *matches* is given the ``:``-split cache key.  Replaying the stored
+    request through an in-process client re-renders with whatever fact
+    changed (trending rank, watchlist membership) and re-caches the result.
+    Returns the number of posters regenerated.
+    """
     db = get_db()
     try:
         rows = db.execute("SELECT cache_key, request_params FROM final_poster_cache WHERE request_params IS NOT NULL").fetchall()
     except Exception as exc:
-        logger.error(f"Trending fetch: failed to query cache: {exc}")
-        return
+        logger.error(f"{log_prefix}: failed to query cache: {exc}")
+        return 0
 
-    # Use a test client to regenerate posters through the API
     regenerated_count = 0
-    
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as local_client:
         for cache_key, req_params_str in rows:
             parts = cache_key.split(":")
             if len(parts) < 4:
                 continue
-            if (parts[1], parts[2]) not in trending_pairs:
+            if not matches(parts):
                 continue
             if not req_params_str:
                 continue
-            logger.info(f"Trending fetch: regenerating poster for {cache_key}")
+            logger.info(f"{log_prefix}: regenerating poster for {cache_key}")
             try:
-                # Delete first so the replay misses the cache and re-renders with
-                # the fresh trending rank instead of serving the stale composite.
+                # Delete first so the replay misses the cache and re-renders
+                # instead of serving the stale composite.
                 delete_cached_final_poster(cache_key)
                 resp = await local_client.get(f"/poster?{req_params_str}")
                 if resp.status_code >= 400:
-                    logger.warning(f"Trending fetch: regenerate for {cache_key} returned HTTP {resp.status_code}")
+                    logger.warning(f"{log_prefix}: regenerate for {cache_key} returned HTTP {resp.status_code}")
                 else:
                     regenerated_count += 1
             except Exception as exc:
-                logger.error(f"Trending fetch: failed to regenerate poster {cache_key}: {exc}")
-                    
-    logger.info(f"Trending fetch cycle completed. Regenerated {regenerated_count} posters.")
+                logger.error(f"{log_prefix}: failed to regenerate poster {cache_key}: {exc}")
+    return regenerated_count
+
+
+async def _on_watchlist_change(changed: "watchlist.SnapshotDiff") -> None:
+    """Re-render the cached composites of titles that entered or left the
+    watchlist, so the marker appears (or goes) without waiting out the
+    composite TTL.  Titles never rendered are simply rendered fresh later.
+
+    A composite key is ``<canonical_id>:<tmdb_id>:<type>:<hash>`` — or, for
+    anime, ``<ns>:<id>:<imdb>:<tmdb_id>:<type>:<hash>`` — so the media type
+    and TMDB id are read from the tail and the IMDb id is whichever segment
+    looks like one.
+    """
+    def _matches(parts: list[str]) -> bool:
+        tmdb_id, media_type = parts[-3], parts[-2]
+        if (tmdb_id, watchlist.normalise_kind(media_type)) in changed.tmdb:
+            return True
+        return any(seg in changed.imdb for seg in parts[:-3] if seg.startswith("tt"))
+
+    count = await _regenerate_cached_posters(_matches, log_prefix="Watchlist")
+    logger.info(f"Watchlist: regenerated {count} cached posters for {len(changed.imdb) + len(changed.tmdb)} changed keys")
 
 
 async def _trending_fetch_loop() -> None:
@@ -4251,12 +4285,16 @@ async def lifespan(app: FastAPI):
     cache_warm_task = asyncio.create_task(_cache_warm_loop(_digital_release_ready))
     trending_task = asyncio.create_task(_trending_fetch_loop())
     imdb_dataset_task = asyncio.create_task(imdb_dataset_refresh_loop(_HTTP_CLIENT))
+    watchlist_task = asyncio.create_task(
+        watchlist.watchlist_refresh_loop(_HTTP_CLIENT, _on_watchlist_change)
+    )
     yield
     prune_task.cancel()
     digital_task.cancel()
     cache_warm_task.cancel()
     trending_task.cancel()
     imdb_dataset_task.cancel()
+    watchlist_task.cancel()
     if _background_detection_task is not None:
         _background_detection_task.cancel()
     # Await the cancelled tasks so their finally: blocks finish unwinding
@@ -4379,6 +4417,7 @@ def _normalise_fallback_canvas(image: Image.Image) -> Image.Image:
 
 
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+app.include_router(_admin.router)
 
 
 @app.middleware("http")
@@ -4463,6 +4502,7 @@ async def server_caps(access_key: str = ""):
         "trending_fetch_time":   _cfg.TRENDING_FETCH_TIME,
         "trending_fetch_timezone": _cfg.TRENDING_FETCH_TIMEZONE,
         "trending_next_refresh_hours": next_refresh_hours,
+        "watchlist":             watchlist.status(),
         # Lets the configurator leave out any parameter already at its default.
         # A generated URL was running ~1500 characters, most of it restating
         # defaults, against metadata clients that truncate at 2000.
@@ -4516,9 +4556,7 @@ def _compute_render_assets_signature() -> str:
                     continue
                 digest.update(os.path.relpath(path, BASE_DIR).encode())
                 digest.update(f"{stat.st_size}:{stat.st_mtime_ns}".encode())
-    override_path = os.environ.get(
-        "DISCOVERY_OVERRIDES_PATH", "/app/cache/discovery_overrides.json"
-    )
+    override_path = _cfg.DISCOVERY_OVERRIDES_PATH
     try:
         with open(override_path, "rb") as override_file:
             digest.update(override_file.read())
@@ -4538,7 +4576,29 @@ def _server_render_signature() -> str:
         f"contrast={int(_cfg.LOGO_CONTRAST_RESCUE)}",
         f"stretch={int(_cfg.LOGO_STRETCH_DISABLED)}:{_cfg.LOGO_STRETCH_FACTOR:g}",
         f"assets={_render_assets_signature}",
+        # Enabling the watchlist changes what a title can render, so flipping
+        # it busts composites once; membership changes are handled by targeted
+        # regeneration, not the key.  Unset keeps every existing entry.
+        *((f"wl={watchlist.source_mode()}",) if watchlist.is_enabled() else ()),
     ))
+
+
+_admin_html_cache: str | None = None
+
+
+def _load_admin_html() -> str:
+    """admin.html, read once per process — it carries no server-side
+    substitutions, so there is nothing to refresh."""
+    global _admin_html_cache
+    if _admin_html_cache is None:
+        html_path = os.path.join(os.path.dirname(__file__), "admin.html")
+        try:
+            with open(html_path, "r", encoding="utf-8") as f:
+                _admin_html_cache = f.read()
+        except FileNotFoundError:
+            return "<h1>Admin dashboard not found</h1><p>Place admin.html alongside main.py</p>"
+    return _admin_html_cache
+
 
 
 def _load_configurator_html() -> str:
@@ -4574,7 +4634,11 @@ async def stats(access_key: str = ""):
     """
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY):
         raise HTTPException(status_code=403, detail="Unauthorized")
+    return await _build_stats()
 
+
+async def _build_stats() -> dict:
+    """The /stats payload; also the admin dashboard's overview."""
     now = asyncio.get_running_loop().time()
     keys = _cfg.SERVER_MDBLIST_KEYS
     mdblist_keys = []
@@ -4593,12 +4657,33 @@ async def stats(access_key: str = ""):
             "quota_reset_at":  quota.reset_at if quota and quota.is_current() else None,
         })
 
+    _cache_warm_last = get_app_state(_CACHE_WARM_LAST_RUN_KEY)
     return {
+        "version": _cfg.APP_VERSION,
         "cache":   get_cache_stats(),
         # Surfaced here rather than only on /server-caps because a failed or
         # silently stale dataset refresh is otherwise invisible outside the
         # container logs.
         "imdb_dataset": imdb_dataset.status(),
+        "watchlist": watchlist.status(),
+        "trending": {
+            "fetch_time":     _cfg.TRENDING_FETCH_TIME or None,
+            "timezone":       _cfg.TRENDING_FETCH_TIMEZONE,
+            "source_movie":   bool(_cfg.TRENDING_SOURCE_MOVIE),
+            "source_tv":      bool(_cfg.TRENDING_SOURCE_TV),
+        },
+        "cache_warm": {
+            "enabled":        _cfg.CACHE_WARM_ENABLED,
+            "interval_hours": _cfg.CACHE_WARM_INTERVAL_HOURS,
+            "last_run":       int(float(_cache_warm_last)) if _cache_warm_last else None,
+        },
+        "quality": {
+            "source":         active_quality_source(),
+            "configured":     quality_source_configured(),
+        },
+        "text_detection": _cfg.TEXTLESS_TEXT_DETECTION,
+        "tmdb_key_set":   bool(_cfg.SERVER_TMDB_KEY),
+        "tvdb_key_set":   bool(_cfg.SERVER_TVDB_KEY),
         "runtime": {
             "renders_in_flight":        len(_render_inflight),
             # Fresh renders holding a slot vs parked waiting for one. A queue
@@ -4621,6 +4706,20 @@ async def stats(access_key: str = ""):
             "svg_logo_support":          svg_logo_supported(),
         },
     }
+
+
+async def _admin_simkl_unlink() -> dict:
+    """The admin dashboard's unlink: forget the SIMKL grant, then re-render
+    the posters that carried the marker — the second half needs main's
+    cache, so it is handed over rather than imported."""
+    result = await watchlist.simkl_unlink(_HTTP_CLIENT)
+    changed = result.pop("changed")
+    if changed:
+        await _on_watchlist_change(changed)
+    return result
+
+
+_admin.register(_build_stats, _load_admin_html, _admin_simkl_unlink)
 
 
 # TMDB genre name → id, used only by the debug canvas preview below.
@@ -6549,6 +6648,7 @@ async def get_poster(
             upcoming_release_date=_upcoming_release_date,
             upcoming_release_window=_upcoming_release_window,
             recent_digital_release_date=_recent_digital_release_date,
+            is_watchlisted=watchlist.is_listed(effective_imdb_id or imdb_id, tmdb_id, type),
         )
 
         _sash_priority = rcfg.sash_priority
@@ -6598,6 +6698,7 @@ async def get_poster(
                 "is_returning":      discovery_meta.is_returning,
                 "is_season_finale":  discovery_meta.is_season_finale,
                 "trending_rank":     discovery_meta.trending_rank,
+                "is_watchlisted":    discovery_meta.is_watchlisted,
                 "original_language": discovery_meta.original_language,
                 "matched_studios":   discovery_meta.matched_studios,
                 "matched_directors": discovery_meta.matched_directors,

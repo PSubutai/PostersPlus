@@ -3442,6 +3442,10 @@ function onPrimaryClientChange({ rebuild = true } = {}) {
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w92';
 
 const SASH_SLOTS = [
+  // Personal — the instance operator's own watchlist (WATCHLIST_SOURCE on the
+  // server). Inert on instances that have none; the label says so once
+  // server-caps have loaded.
+  { id:'watchlist',      label:'Watchlist',                         color:'#e8963a' },
   // Prestige — rare and timeless, so they outrank everything else.
   { id:'wins',           label:'Best Picture / Major Emmy Win',     color:'#c9a84c' },
   { id:'gg_wins',        label:'Major Golden Globe Win',            color:'#c9a84c' },
@@ -3706,6 +3710,8 @@ async function fetchServerCaps() {
       if (trSash) trSash.label = `TMDB Trending Top ${serverCaps.trending_fetch_count}`;
       buildSashList();
     }
+
+    applyWatchlistStatus(serverCaps.watchlist || {});
     
     const trField = document.getElementById('trending-schedule-field');
     const trHint = document.getElementById('trending-schedule-hint');
@@ -3721,6 +3727,20 @@ async function fetchServerCaps() {
       }
     }
   } catch(e) {}
+}
+
+// ── Watchlist marker ──────────────────────────────────────────────────────
+// The slot's label says which source the server has and how many titles it
+// holds.  Linking a SIMKL account is the operator's job and lives in the
+// admin dashboard (/admin, Watchlist group); nothing here can change it.
+function applyWatchlistStatus(wl) {
+  const wlSash = SASH_SLOTS.find(s => s.id === 'watchlist');
+  if (!wlSash) return;
+  const NAMES = { mdblist: 'MDBList', simkl: 'SIMKL', trakt: 'Trakt', url: 'MDBList list' };
+  wlSash.label = wl.source && NAMES[wl.source]
+    ? `Watchlist (${NAMES[wl.source]}, ${wl.titles} titles)`
+    : 'Watchlist (not configured on this server)';
+  buildSashList();
 }
 
 function updateKeyBadges() {
