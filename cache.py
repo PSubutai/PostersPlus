@@ -1537,6 +1537,15 @@ def set_cached_tvdb_json(cache_key: str, value: dict, ttl_seconds: int) -> None:
         logger.error(f"TVDB cache write error: {exc}")
 
 
+def delete_cached_tvdb_json(cache_key: str) -> None:
+    try:
+        with _db_lock:
+            get_db().execute("DELETE FROM tvdb_cache WHERE cache_key = ?", (cache_key,))
+            get_db().commit()
+    except Exception as exc:
+        logger.error(f"TVDB cache delete error: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Digital release cache
 # ---------------------------------------------------------------------------

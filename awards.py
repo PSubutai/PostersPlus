@@ -31,7 +31,7 @@ FETCH_FAILED = _FetchFailed()
 
 class _RateLimited:
     """
-    Returned when a fetch was rejected with HTTP 429.
+    Returned when a fetch was refused with HTTP 429 or 503.
 
     Carries the parsed Retry-After value (in seconds) when the upstream
     provided one, so the caller can honour it instead of the default fixed
@@ -39,15 +39,22 @@ class _RateLimited:
     skips immediate re-attempts (retrying a 429 is counterproductive).
 
     *reset_at* is the epoch second the key's daily quota rolls over, taken
-    from MDBList's X-RateLimit-Reset header. A quota-exhausted 429 comes
-    without Retry-After, so this is what tells the caller how long the key
-    is actually dead for.
+    from MDBList's X-RateLimit-Reset header. It is set only when the response
+    said the key's quota is spent; that is what separates the two throttles
+    MDBList applies. A quota 429 comes with no Retry-After and belongs to the
+    key. A burst 429 (Retry-After, typically 10 s, no quota headers) or a 503
+    is MDBList's short per-IP limit: every key on the address is refused for
+    the same few seconds, so it belongs to the process, not to the key.
     """
     __slots__ = ("retry_after", "reset_at")
 
     def __init__(self, retry_after: float | None = None, reset_at: float | None = None):
         self.retry_after = retry_after
         self.reset_at = reset_at
+
+    @property
+    def quota_exhausted(self) -> bool:
+        return self.reset_at is not None
 
     def __repr__(self):
         return f"RATE_LIMITED(retry_after={self.retry_after}, reset_at={self.reset_at})"

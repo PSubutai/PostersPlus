@@ -73,6 +73,24 @@ Override the Kitsu endpoint (useful for a proxy or a mirror).
 
 Default: `https://kitsu.io/api/edge`
 
+### `CINEMETA_METADATA_CACHE_DURATION`
+
+Days to cache a title's Cinemeta document — the art urls, title, genres, dates and the TMDB id it carries (which is what resolves an IMDb-only request without a TMDB key). Metahub art itself is cached under the normal image cache.
+
+Default: `7`
+
+### `CINEMETA_NEG_CACHE_DURATION`
+
+Days to cache a "no such id on Cinemeta" result. Throttles and network errors are never cached — only definitive misses.
+
+Default: `3`
+
+### `CINEMETA_API_BASE`
+
+Override the Cinemeta endpoint (useful for a proxy or a mirror).
+
+Default: `https://v3-cinemeta.strem.io`
+
 ---
 
 ## Caching and output

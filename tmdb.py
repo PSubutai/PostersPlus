@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 import httpx
 import numpy as np
 
+import cinemeta
+
 logger = logging.getLogger(__name__)
 from PIL import Image, ImageFilter
 
@@ -53,6 +55,8 @@ from cache import (
     get_cached_movie_release_info,
     set_cached_movie_release_info,
     release_status_expiry,
+    get_cached_tvdb_json,
+    set_cached_tvdb_json,
 )
 
 from config import (
@@ -624,6 +628,52 @@ async def fetch_poster_metadata(
     return genre_ids, is_textless, logos, release_year, title, poster_path, backdrop_path, tmdb_data
 
 
+# ---------------------------------------------------------------------------
+# Art cache keys
+#
+# Shared by the fetchers below and by main.py's deferred text-detection queue,
+# which has to name the cached image a fetcher wrote without re-deriving the
+# scheme. Absolute urls (anime providers, Cinemeta/Metahub) are hashed because
+# they contain characters that don't belong in a filename; TMDB paths are used
+# as-is so every existing cache entry keeps its key.
+# ---------------------------------------------------------------------------
+
+def is_absolute_art(path: str | None) -> bool:
+    return bool(path) and path.startswith(("http://", "https://"))
+
+
+def _art_token(path: str) -> str:
+    if is_absolute_art(path):
+        return hashlib.sha256(path.encode()).hexdigest()[:16]
+    return path.strip("/")
+
+
+def _id_token(tmdb_id: str) -> str:
+    # A stand-in id ("kitsu:12345") carries a colon; replaced so the key is a
+    # portable filename on every filesystem. Numeric TMDB ids are unchanged.
+    return tmdb_id.replace(":", "_")
+
+
+def poster_image_cache_key(tmdb_id: str, media_type: str, poster_path: str) -> str:
+    return f"{media_type}_{_id_token(tmdb_id)}_{_art_token(poster_path)}"
+
+
+def backdrop_image_cache_key(tmdb_id: str, backdrop_path: str, avoid_text: bool) -> str:
+    # Carries the crop-logic version so changing the crop algorithm invalidates
+    # previously-cached crops instead of serving the old framing.
+    return (
+        f"backdrop_{_id_token(tmdb_id)}_{_art_token(backdrop_path)}_{_CROP_VERSION}"
+        + ("_ta" if avoid_text else "")
+    )
+
+
+def landscape_image_cache_key(tmdb_id: str, backdrop_path: str) -> str:
+    return (
+        f"landscape_{_id_token(tmdb_id)}_{_art_token(backdrop_path)}"
+        f"_{LANDSCAPE_WIDTH}x{LANDSCAPE_HEIGHT}"
+    )
+
+
 async def fetch_poster_image(
     client: httpx.AsyncClient,
     tmdb_id: str,
@@ -640,20 +690,11 @@ async def fetch_poster_image(
     The image is returned as RGBA so the compositing pipeline can use
     alpha_composite throughout without mode-checking.
     """
-    # Anime providers (AniList/Kitsu) hand us an absolute CDN url rather than a
-    # TMDB path.  Detect that and fetch it directly; the cache/normalise/return
-    # path below is identical either way.  The url is hashed into the cache key
-    # because provider urls contain characters that don't belong in a filename.
-    _is_absolute = poster_path.startswith(("http://", "https://"))
-    if _is_absolute:
-        # tmdb_id is the namespaced anime id here ("kitsu:12345"); the colon is
-        # replaced so the key is a portable filename on every filesystem.
-        poster_cache_key = (
-            f"{media_type}_{tmdb_id.replace(':', '_')}_"
-            f"{hashlib.sha256(poster_path.encode()).hexdigest()[:16]}"
-        )
-    else:
-        poster_cache_key = f"{media_type}_{tmdb_id}_{poster_path.strip('/')}"
+    # Anime providers (AniList/Kitsu) and Cinemeta hand us an absolute CDN url
+    # rather than a TMDB path.  Detect that and fetch it directly; the
+    # cache/normalise/return path below is identical either way.
+    _is_absolute = is_absolute_art(poster_path)
+    poster_cache_key = poster_image_cache_key(tmdb_id, media_type, poster_path)
     cached_bytes = get_cached_tmdb_poster(poster_cache_key)
 
     if cached_bytes:
@@ -878,13 +919,8 @@ async def fetch_backdrop_image(
     produce a profile that biases the crop away from burned-in title text.  Cached under the
     same JPEG scheme as regular posters (text-aware crops keyed separately).
     """
-    # Cache key carries a crop-logic version so changing the crop algorithm
-    # (e.g. adding face-aware cropping) invalidates previously-cached crops
-    # instead of serving the old framing.  Bump _CROP_VERSION on any crop change.
-    cache_key = (
-        f"backdrop_{tmdb_id}_{backdrop_path.strip('/')}_{_CROP_VERSION}"
-        + ("_ta" if avoid_text else "")
-    )
+    # Bump _CROP_VERSION on any crop change — it is part of the key.
+    cache_key = backdrop_image_cache_key(tmdb_id, backdrop_path, avoid_text)
     cached_bytes = get_cached_tmdb_poster(cache_key)
 
     if cached_bytes:
@@ -895,8 +931,12 @@ async def fetch_backdrop_image(
         return image
 
     # w1280 gives enough resolution to crop to a quality portrait
-    logger.info(f"External API Call: Requested backdrop from TMDB for {tmdb_id}")
-    img_resp = await client.get(f"https://image.tmdb.org/t/p/w1280{backdrop_path}")
+    if is_absolute_art(backdrop_path):
+        logger.info(f"External API Call: Requested backdrop art for {tmdb_id}")
+        img_resp = await client.get(backdrop_path, follow_redirects=True)
+    else:
+        logger.info(f"External API Call: Requested backdrop from TMDB for {tmdb_id}")
+        img_resp = await client.get(f"https://image.tmdb.org/t/p/w1280{backdrop_path}")
     img_resp.raise_for_status()
     image = Image.open(io.BytesIO(img_resp.content)).convert("RGBA")
 
@@ -944,7 +984,7 @@ async def fetch_landscape_image(
     Cached separately from the portrait backdrop crop of the same asset; the two
     are different images and must not share a key.
     """
-    cache_key = f"landscape_{tmdb_id}_{backdrop_path.strip('/')}_{LANDSCAPE_WIDTH}x{LANDSCAPE_HEIGHT}"
+    cache_key = landscape_image_cache_key(tmdb_id, backdrop_path)
     cached_bytes = get_cached_tmdb_poster(cache_key)
 
     if cached_bytes:
@@ -954,8 +994,12 @@ async def fetch_landscape_image(
             image = normalise_landscape(image)
         return image
 
-    logger.info(f"External API Call: Requested landscape backdrop from TMDB for {tmdb_id}")
-    img_resp = await client.get(f"https://image.tmdb.org/t/p/w1280{backdrop_path}")
+    if is_absolute_art(backdrop_path):
+        logger.info(f"External API Call: Requested landscape backdrop art for {tmdb_id}")
+        img_resp = await client.get(backdrop_path, follow_redirects=True)
+    else:
+        logger.info(f"External API Call: Requested landscape backdrop from TMDB for {tmdb_id}")
+        img_resp = await client.get(f"https://image.tmdb.org/t/p/w1280{backdrop_path}")
     img_resp.raise_for_status()
     image = normalise_landscape(Image.open(io.BytesIO(img_resp.content)).convert("RGBA"))
 
@@ -1145,6 +1189,30 @@ def image_language_order(
     return list(dict.fromkeys(language for language in languages if language))
 
 
+# Aspect ratio from which a logo counts as "wide" for the landscape layout.  Its
+# logo box is 0.42 w by ~0.255 h, an aspect near 2.9: a stacked or square logo
+# is capped by the height and lands small, a wordmark at 2.0 or above fills the
+# box.  Below this the layout has to shrink the logo; above it, votes decide.
+WIDE_LOGO_MIN_ASPECT = 2.0
+
+
+def _logo_aspect(logo: dict) -> float:
+    ratio = logo.get("aspect_ratio")
+    if ratio:
+        return float(ratio)
+    w, h = logo.get("width") or 0, logo.get("height") or 0
+    return (w / h) if (w and h) else 0.0
+
+
+def _logo_rank_key(prefer_wide: bool):
+    """Sort key for the winning language bucket, highest first: votes, or with
+    ``prefer_wide`` the wide logos before the rest and votes within each."""
+    def key(logo: dict) -> tuple[bool, float]:
+        wide = prefer_wide and _logo_aspect(logo) >= WIDE_LOGO_MIN_ASPECT
+        return (wide, logo.get("vote_average", 0) or 0)
+    return key
+
+
 async def fetch_logo(
     client: httpx.AsyncClient,
     logos: list[dict],
@@ -1154,9 +1222,16 @@ async def fetch_logo(
     logo_priority: str = "native_original",
     use_metahub: bool = True,
     secondary_language: str | None = None,
+    prefer_wide: bool = False,
 ) -> Image.Image | None:
     """
     Fetch the best available logo for a title, with a Metahub CDN fallback.
+
+    ``prefer_wide`` (the landscape layout) ranks a wide logo — aspect at or
+    above WIDE_LOGO_MIN_ASPECT — ahead of any narrower one within the bucket
+    that won, votes deciding among the wide ones.  Language still comes first:
+    a wide logo in the wrong language is not preferred over a stacked one in
+    the right language.
 
     Two language-specific buckets are weighed first, in an order set by
     *logo_priority*:
@@ -1219,11 +1294,7 @@ async def fetch_logo(
             if not candidates and bucket:
                 candidates = bucket
 
-    candidates = sorted(
-        candidates,
-        key=lambda x: x.get("vote_average", 0),
-        reverse=True,
-    )
+    candidates = sorted(candidates, key=_logo_rank_key(prefer_wide), reverse=True)
 
     if not candidates:
         # No TMDB logo at all — try Metahub before giving up (unless the caller
@@ -1754,7 +1825,12 @@ async def fetch_supplemental_candidates(
     return candidates
 
 
-async def resolve_tmdb_id_from_imdb(
+class IdResolveError(Exception):
+    """The id lookup could not be completed (network, 5xx, bad key) — as
+    opposed to a definite "no such title", which is a None result."""
+
+
+async def tmdb_find_by_imdb(
     client: httpx.AsyncClient,
     imdb_id: str,
     tmdb_key: str,
@@ -1765,7 +1841,9 @@ async def resolve_tmdb_id_from_imdb(
 
     Returns ``{"tmdb_id": str, "media_type": "movie"|"tv"}``, preferring a
     result matching *media_type_hint* when both movie and tv results are
-    present, or ``None`` if TMDB has no match for either.
+    present, or ``None`` if TMDB has no match for either. Raises
+    ``IdResolveError`` when the lookup itself failed, so a caller can tell an
+    outage from an unknown title and not cache the former.
     """
     try:
         resp = await client.get(
@@ -1775,8 +1853,7 @@ async def resolve_tmdb_id_from_imdb(
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
-        logger.warning(f"Cache warm: TMDB find failed for {imdb_id}: {exc}")
-        return None
+        raise IdResolveError(f"TMDB find failed for {imdb_id}: {exc}") from exc
 
     movie_results = data.get("movie_results") or []
     tv_results    = data.get("tv_results") or []
@@ -1790,6 +1867,97 @@ async def resolve_tmdb_id_from_imdb(
     if tv_results:
         return {"tmdb_id": str(tv_results[0]["id"]), "media_type": "tv"}
     return None
+
+
+# Persisted IMDb -> TMDB id map. A /find call per request would double TMDB
+# traffic and add a round-trip even to composite-cache hits, so the answer is
+# kept for a long time — the mapping essentially never changes. A definite
+# "TMDB has no record" is kept for a day so a run of requests for the same
+# unlinked title doesn't re-ask; a failed lookup is never cached.
+_IDMAP_VERSION = "v1"
+_IDMAP_TTL_SECONDS = 90 * 86400
+_IDMAP_MISS_TTL_SECONDS = 86400
+_IDMAP_MISS = {"__miss__": True}
+
+
+def _idmap_key(imdb_id: str, media_type: str) -> str:
+    return f"idmap:{_IDMAP_VERSION}:imdb:{imdb_id}:{media_type}"
+
+
+async def resolve_imdb_to_tmdb(
+    client: httpx.AsyncClient,
+    imdb_id: str,
+    media_type: str,
+    tmdb_key: str | None,
+) -> dict | None:
+    """
+    The TMDB identity of an IMDb id, cached: ``{"tmdb_id", "media_type"}``.
+
+    With a key, TMDB's /find is authoritative and may correct *media_type* —
+    an IMDb id names one title, and TMDB knows which list it lives in. Without
+    a key, Cinemeta's ``moviedb_id`` stands in (no key needed; the type is
+    taken on trust). None means neither source has a TMDB id for it — the
+    caller decides whether the Cinemeta spine can carry the title instead.
+    Raises ``IdResolveError`` only when a keyed TMDB lookup failed outright.
+    """
+    key = _idmap_key(imdb_id, media_type)
+    cached = get_cached_tvdb_json(key)
+    if cached is not None:
+        if cached.get("__miss__"):
+            return None
+        return {"tmdb_id": cached["tmdb_id"], "media_type": cached["media_type"]}
+
+    # A library grid loading fires the same uncached id from many tiles at
+    # once; the first lookup answers for all of them.
+    inflight = _idmap_inflight.get(key)
+    if inflight is not None:
+        return await inflight
+    fut: "asyncio.Future[dict | None]" = asyncio.get_running_loop().create_future()
+    _idmap_inflight[key] = fut
+    try:
+        result = await _resolve_imdb_to_tmdb_uncached(client, imdb_id, media_type, tmdb_key, key)
+    except BaseException as exc:
+        fut.set_exception(exc)
+        raise
+    else:
+        fut.set_result(result)
+        return result
+    finally:
+        _idmap_inflight.pop(key, None)
+
+
+_idmap_inflight: "dict[str, asyncio.Future]" = {}
+
+
+async def _resolve_imdb_to_tmdb_uncached(
+    client: httpx.AsyncClient,
+    imdb_id: str,
+    media_type: str,
+    tmdb_key: str | None,
+    key: str,
+) -> dict | None:
+    result: dict | None = None
+    if tmdb_key:
+        # TMDB is authoritative for its own linkage: a title /find doesn't
+        # return is unlinked, whatever an older Cinemeta document says.
+        result = await tmdb_find_by_imdb(client, imdb_id, tmdb_key, media_type)
+        if result is None:
+            set_cached_tvdb_json(key, _IDMAP_MISS, _IDMAP_MISS_TTL_SECONDS)
+            return None
+        logger.info(
+            f"Resolved {imdb_id} -> TMDB {result['media_type']}/{result['tmdb_id']} via /find"
+        )
+    else:
+        cm_tmdb_id = await cinemeta.resolve_tmdb_id(client, imdb_id, media_type)
+        if cm_tmdb_id is None:
+            # Cinemeta may simply have been unreachable — never cache that as
+            # a miss.
+            return None
+        result = {"tmdb_id": cm_tmdb_id, "media_type": media_type}
+        logger.info(f"Resolved {imdb_id} -> TMDB {media_type}/{cm_tmdb_id} via Cinemeta")
+
+    set_cached_tvdb_json(key, result, _IDMAP_TTL_SECONDS)
+    return result
 
 
 
@@ -1830,8 +1998,15 @@ async def fetch_catalog_candidates(
         if meta_id.startswith("tmdb:"):
             return {"tmdb_id": meta_id.split(":", 1)[1], "media_type": media_type}
         if meta_id.startswith("tt"):
+            # Through the persisted id map, so a catalog re-warmed every cycle
+            # costs one /find per title ever, and live imdb_id-only requests
+            # for the same titles find the answer already there.
             async with resolve_sem:
-                return await resolve_tmdb_id_from_imdb(client, meta_id, tmdb_key, media_type)
+                try:
+                    return await resolve_imdb_to_tmdb(client, meta_id, media_type, tmdb_key)
+                except IdResolveError as exc:
+                    logger.warning(f"Cache warm: {exc}")
+                    return None
         return None
 
     for raw_url in catalog_urls:

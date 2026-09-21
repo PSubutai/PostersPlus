@@ -1,4 +1,7 @@
-"""IMDb is optional at the poster boundary; TMDB is the required identity.
+"""IMDb is optional at the poster boundary; TMDB is the primary identity.
+
+(Either id now identifies a title — see test_either_id.py for the resolution
+paths. These tests cover the enrichment role of imdb_id alongside tmdb_id.)
 
 These tests pin the three identities apart — the cache/coalescing identity, the
 MDBList lookup route, and the optional real IMDb id — because conflating them is
@@ -180,23 +183,34 @@ class PosterBoundaryTests(unittest.TestCase):
     def setUp(self):
         self.access_key = main._cfg.ACCESS_KEY
         self.tmdb_key = main._cfg.SERVER_TMDB_KEY
+        self.cinemeta = main._cfg.CINEMETA_ENABLED
         main._cfg.ACCESS_KEY = ""
         main._cfg.SERVER_TMDB_KEY = ""
+        # Off, so an IMDb-only request has no key-less spine to fall to and
+        # stops at the key check like a TMDB-only one.
+        main._cfg.CINEMETA_ENABLED = False
         self.client = TestClient(main.app)
 
     def tearDown(self):
         main._cfg.ACCESS_KEY = self.access_key
         main._cfg.SERVER_TMDB_KEY = self.tmdb_key
+        main._cfg.CINEMETA_ENABLED = self.cinemeta
 
     def test_tmdb_only_request_clears_validation(self):
         resp = self.client.get("/poster", params={"tmdb_id": "1698026", "type": "movie"})
         self.assertEqual(resp.status_code, 400)
         self.assertIn("TMDB API key", resp.json()["detail"])
 
-    def test_missing_tmdb_id_still_fails_clearly(self):
+    def test_imdb_only_request_clears_validation(self):
         resp = self.client.get("/poster", params={"imdb_id": "tt0903747", "type": "movie"})
         self.assertEqual(resp.status_code, 400)
+        self.assertIn("TMDB API key", resp.json()["detail"])
+
+    def test_missing_both_ids_names_both(self):
+        resp = self.client.get("/poster", params={"type": "movie"})
+        self.assertEqual(resp.status_code, 400)
         self.assertIn("tmdb_id", resp.json()["detail"])
+        self.assertIn("imdb_id", resp.json()["detail"])
 
     def test_malformed_optional_imdb_id_still_fails_validation(self):
         resp = self.client.get(

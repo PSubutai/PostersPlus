@@ -95,7 +95,7 @@ QUALICACHE_MIN_TRUST = (
     if QUALICACHE_MIN_TRUST_RAW in QUALICACHE_MIN_TRUST_VALUES
     else "high"
 )
-SERVER_TMDB_KEY       = _env('TMDB_API_KEY', "", group='API keys', kind='secret', label='TMDB API key', help='Fetches posters, logos and metadata. Required unless every client passes its own tmdb_key.').strip()
+SERVER_TMDB_KEY       = _env('TMDB_API_KEY', "", group='API keys', kind='secret', label='TMDB API key', help='Fetches posters, logos and metadata. Strongly recommended; without one (and no per-client tmdb_key) titles render from Cinemeta and need an imdb_id on the request.').strip()
 SERVER_MDBLIST_KEY    = _env('MDBLIST_API_KEY', "", group='API keys', kind='secret', label='MDBList API key', help='Ratings, awards, keywords and age ratings. Without it the score reads N/A and the MDBList-only sashes are unavailable.').strip()
 SERVER_MDBLIST_KEY_2  = _env('MDBLIST_API_KEY_2', "", group='API keys', kind='secret', label='MDBList API key (second)', help="Retried in the same request when the primary key is rate-limited; a key that has spent its daily quota stays parked until MDBList's reset.").strip()
 
@@ -132,6 +132,14 @@ TVDB_USE_POSTERS      = _flag(_env("TVDB_USE_POSTERS", "false", group='TVDB fall
 TVDB_LOGO_PRIORITY    = max(1, min(3, int(_env('TVDB_LOGO_PRIORITY', "3", group='TVDB fallback art', kind='choice', label='TVDB logo priority', help='Where a TVDB clearlogo sits in the logo chain: 1 before TMDB and Metahub, 2 after TMDB but before Metahub, 3 last resort (only when both have nothing). TVDB logos are often higher quality, so 1 or 2 improve results but change logos currently sourced from TMDB or Metahub.', choices=('1', '2', '3')))))
 # Caps concurrent TVDB API calls so a burst of uncached misses can't stampede it.
 TVDB_CONCURRENCY      = max(1, int(_env('TVDB_CONCURRENCY', "3", group='TVDB fallback art', kind='int', label='TVDB concurrency', help='Maximum concurrent outbound TVDB requests per worker.', min=1, max=32)))
+
+# Cinemeta (Stremio's catalogue addon) as a key-less, IMDb-keyed art source.
+# Engages only where the TMDB path can't: no TMDB key on the server or request,
+# or TMDB has no record for the IMDb id. Also an extra no-art rescue tier
+# (Metahub background, then poster) when TMDB knows a title but has no artwork.
+# When a TMDB key is present and TMDB knows the title, nothing here runs.
+CINEMETA_ENABLED = _flag(_env("CINEMETA_ENABLED", "true", group='Cinemeta fallback', kind='bool', label='Cinemeta fallback', help="Render from Stremio's Cinemeta catalogue (IMDb-keyed, no API key) when no TMDB key is available or TMDB has no record for the IMDb id, and try its Metahub art before the genre canvas when TMDB has no artwork. Needs an imdb_id (or a tt... stremio_id) on the request."), True)
+CINEMETA_API_BASE = _env('CINEMETA_API_BASE', "https://v3-cinemeta.strem.io", group='Cinemeta fallback', kind='url', label='Cinemeta API base', help='Override only if you proxy Cinemeta.', advanced=True).strip().rstrip("/")
 
 # Anime-native art sources (AniList / Kitsu).
 # These engage only when a client passes anilist_id / kitsu_id — no id conversion
@@ -268,6 +276,8 @@ TVDB_TYPES_CACHE_DURATION    = int(_env('TVDB_TYPES_CACHE_DURATION', "30", group
 # without waiting out the full window.
 ANIME_METADATA_CACHE_DURATION = int(_env('ANIME_METADATA_CACHE_DURATION', "7", group='Anime sources', kind='int', label='Anime metadata cache (days)', help="Days to cache an anime title's provider metadata and score.", min=1, max=365, advanced=True))  # days
 ANIME_NEG_CACHE_DURATION      = int(_env('ANIME_NEG_CACHE_DURATION', "3", group='Anime sources', kind='int', label='Anime negative cache (days)', help='Days to cache a no-such-id result from the provider.', min=1, max=365, advanced=True))       # days
+CINEMETA_METADATA_CACHE_DURATION = int(_env('CINEMETA_METADATA_CACHE_DURATION', "7", group='Cinemeta fallback', kind='int', label='Cinemeta metadata cache (days)', help="Days to cache a title's Cinemeta document, including the IMDb-to-TMDB id it carries.", min=1, max=365, advanced=True))  # days
+CINEMETA_NEG_CACHE_DURATION      = int(_env('CINEMETA_NEG_CACHE_DURATION', "3", group='Cinemeta fallback', kind='int', label='Cinemeta negative cache (days)', help='Days to cache a no-such-id result from Cinemeta.', min=1, max=365, advanced=True))       # days
 DAYS_CONSIDERED_NEW          = 14
 NEW_CACHE_DURATION           = 1
 OLD_CACHE_DURATION           = 14
@@ -372,6 +382,14 @@ QUALITY_WAIT_TIMEOUT         = float(_env('QUALITY_WAIT_TIMEOUT', "30", group='P
 # ReadTimeouts even when the service is healthy.  3 is comfortably within their
 # apparent per-key concurrency limit while still allowing good parallelism.
 MDBLIST_CONCURRENCY          = int(_env('MDBLIST_CONCURRENCY', "3", group='Performance', kind='int', label='MDBList concurrency', help='Maximum concurrent outbound MDBList requests per worker. MDBList drops requests past roughly 3 per key.', min=1, max=16))
+
+# Minimum spacing between MDBList request *starts*, shared by live renders and
+# the cache warmer.  Besides the daily quota, MDBList has a short per-IP burst
+# limit: too many calls in a few seconds returns 503s, then 429 with
+# Retry-After: 10 for every key on the address.  MDBLIST_CONCURRENCY alone let
+# a cold catalog warm reach ~10 calls/s (3 in flight at ~300 ms each), which
+# tripped it; 0.2 s holds the process to 5/s.  0 disables the pacing.
+MDBLIST_MIN_INTERVAL         = max(0.0, float(_env('MDBLIST_MIN_INTERVAL', "0.2", group='Performance', kind='float', label='MDBList request spacing (s)', help='Minimum seconds between the start of one outbound MDBList request and the next, across live renders and cache warming. MDBList has a short per-IP burst limit on top of the daily quota, and 3 unpaced concurrent calls can reach it during a cold catalog warm; 0.2 holds the server to 5 calls per second. 0 turns the pacing off.', min=0, max=5)))
 
 # Max uncached poster renders in flight per worker.  Composite cache hits and
 # requests coalesced onto an in-flight render are never held back — this only

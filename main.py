@@ -206,8 +206,9 @@ _quality_source_fail_count: dict[str, int] = {}
 # _rating_backoff: maps (imdb_id, API key) -> loop-time after which a new
 #   attempt is allowed. Scoping by key lets a rotated or replaced key retry
 #   the same title immediately. Network failures use an escalating ladder
-#   (30s/2m/8m/1h); rate-limit responses use Retry-After, else the key's
-#   daily-quota reset (X-RateLimit-Reset), else 1h flat.
+#   (30s/2m/8m/1h); a quota 429 parks the key until its daily reset
+#   (X-RateLimit-Reset). A burst 429/503 is per-IP and sets no per-title or
+#   per-key state at all — see _mdblist_ip_pause_until.
 
 _rating_fetch_inflight:         dict[str, asyncio.Event] = {}
 _rating_backoff:                dict[tuple[str, str], float] = {}
@@ -466,6 +467,54 @@ _mdblist_key_cooldown: dict[str, float] = {}
 # Index into _cfg.SERVER_MDBLIST_KEYS for the currently active server-side key.
 _mdblist_active_key_idx: int = 0
 
+# Process-wide MDBList pacing and burst pause. The daily quota is per key, but
+# MDBList also throttles per *IP*: a burst of calls within a few seconds gets
+# 503s, then 429 + Retry-After (10 s) for every key on the address. Neither
+# belongs to a key — rotating through a burst only spends another refused
+# call — so both live here, shared by /poster renders and the cache warmer.
+_mdblist_next_slot: float = 0.0        # loop time the next request may start (MDBLIST_MIN_INTERVAL)
+_mdblist_ip_pause_until: float = 0.0   # loop time the current burst pause ends
+_MDBLIST_BURST_PAUSE_DEFAULT = 10.0    # a burst 429/503 with no Retry-After
+_MDBLIST_BURST_PAUSE_MAX     = 120.0   # sanity cap on Retry-After
+# A live render waits through a pause this long for a complete, cacheable
+# poster; anything longer renders provisionally and lets the client retry.
+_MDBLIST_BURST_WAIT_MAX      = 30.0
+# Burst pauses one cache-warm cycle tolerates before giving MDBList up for the cycle.
+_CACHE_WARM_MAX_BURST_PAUSES = 3
+
+
+def _mdblist_ip_pause_remaining(now: float | None = None) -> float:
+    if now is None:
+        now = asyncio.get_running_loop().time()
+    return max(0.0, _mdblist_ip_pause_until - now)
+
+
+async def _mdblist_wait_for_slot() -> None:
+    """Hold the caller through any burst pause, then until its paced slot.
+
+    Slots are reserved before sleeping, so concurrent callers (up to
+    MDBLIST_CONCURRENCY) line up MDBLIST_MIN_INTERVAL apart rather than all
+    waking on the same tick. Call it with the MDBList semaphore held.
+    """
+    global _mdblist_next_slot
+    loop = asyncio.get_running_loop()
+    while True:
+        now = loop.time()
+        pause_left = _mdblist_ip_pause_until - now
+        if pause_left > 0:
+            await asyncio.sleep(pause_left)
+            continue
+        interval = _cfg.MDBLIST_MIN_INTERVAL
+        if interval <= 0:
+            return
+        slot = max(now, _mdblist_next_slot)
+        _mdblist_next_slot = slot + interval
+        if slot > now:
+            await asyncio.sleep(slot - now)
+            if _mdblist_ip_pause_until > loop.time():
+                continue  # a burst landed while we slept — wait that out too
+        return
+
 
 def _quality_backoff_remaining(now: float | None = None) -> float:
     if now is None:
@@ -531,21 +580,34 @@ def _mdblist_server_key_label(key: str | None) -> str:
 def _mark_mdblist_rate_limit(
     canonical_id: str, key: str, result
 ) -> tuple[float, str | None]:
-    """Cool down a rate-limited key and select a healthy configured fallback.
+    """Record a _RateLimited result; returns (seconds to wait, fallback key).
 
-    MDBList's limit is a daily quota, and a quota 429 carries no Retry-After —
-    only X-RateLimit-Reset. Retrying hourly until then just burns log lines,
-    so the key sleeps until the reset (capped at a day in case the header is
-    nonsense) and the fallback key takes over meanwhile.
+    MDBList throttles two ways and they need opposite handling:
+
+    * Quota 429 (``result.quota_exhausted``): the key is spent for the day and
+      carries no Retry-After, only X-RateLimit-Reset. Retrying hourly until
+      then just burns log lines, so the key sleeps until the reset (capped at
+      a day in case the header is nonsense) and a configured sibling takes
+      over meanwhile.
+    * Burst 429 or 503: per-IP, a few seconds long (Retry-After: 10 when
+      given). Every key on the address is refused for the same window, so
+      the process as a whole pauses (_mdblist_ip_pause_until) and no key is
+      cooled down or rotated — the fallback is always None. Nothing is
+      recorded against the title either; it is retried as soon as the pause
+      lifts.
     """
-    reset_at = getattr(result, "reset_at", None)
+    global _mdblist_ip_pause_until
+    now = asyncio.get_running_loop().time()
+    if not getattr(result, "quota_exhausted", False):
+        pause = float(result.retry_after) if result.retry_after else _MDBLIST_BURST_PAUSE_DEFAULT
+        pause = min(max(pause, 1.0), _MDBLIST_BURST_PAUSE_MAX)
+        _mdblist_ip_pause_until = max(_mdblist_ip_pause_until, now + pause)
+        return pause, None
+    reset_at = result.reset_at
     if result.retry_after:
         backoff_secs = min(float(result.retry_after), 3600.0)
-    elif reset_at:
-        backoff_secs = min(max(float(reset_at) - time.time(), 60.0), 86400.0)
     else:
-        backoff_secs = 3600.0
-    now = asyncio.get_running_loop().time()
+        backoff_secs = min(max(float(reset_at) - time.time(), 60.0), 86400.0)
     _mdblist_key_cooldown[key] = now + backoff_secs
     _rating_backoff[_rating_retry_key(canonical_id, key)] = now + backoff_secs
     return backoff_secs, _next_mdblist_server_key(key, now)
@@ -681,7 +743,7 @@ from ratings import (
     _score_color_alt,
     _score_color_metal,
 )
-from tmdb import composite_logo, logo_centre_y, fetch_logo, image_language_order, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_landscape_image, fetch_trending_rank, fetch_trending_candidates, fetch_popular_candidates, fetch_supplemental_candidates, fetch_catalog_candidates, fetch_release_status, fetch_upcoming_movie_release, fetch_recent_movie_digital_release_date, svg_logo_supported, tmdb_metadata_cache_key, _CROP_VERSION, _fetch_metahub_logo, LOGO_ABS_MAX_H, TEXT_FORWARD_PRIORITIES as _TEXT_FORWARD_LOGO_PRIORITIES
+from tmdb import composite_logo, logo_centre_y, fetch_logo, image_language_order, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_landscape_image, fetch_trending_rank, fetch_trending_candidates, fetch_popular_candidates, fetch_supplemental_candidates, fetch_catalog_candidates, fetch_release_status, fetch_upcoming_movie_release, fetch_recent_movie_digital_release_date, svg_logo_supported, tmdb_metadata_cache_key, _CROP_VERSION, _fetch_metahub_logo, LOGO_ABS_MAX_H, TEXT_FORWARD_PRIORITIES as _TEXT_FORWARD_LOGO_PRIORITIES, resolve_imdb_to_tmdb, IdResolveError, poster_image_cache_key, backdrop_image_cache_key
 
 # Logo priorities that consult the secondary preferred language ("custom").
 # Elsewhere the secondary language is inert and must be kept out of the image
@@ -692,6 +754,7 @@ _SECONDARY_LANGUAGE_PRIORITIES = frozenset({
 })
 import tvdb
 import anime
+import cinemeta
 
 # ---------------------------------------------------------------------------
 # Persistent HTTP client
@@ -1008,6 +1071,95 @@ def _resolve_anime_request(
     return None, None
 
 
+def _no_tmdb_key_detail(imdb_id: str) -> str:
+    base = (
+        "No TMDB API key available. Either provide tmdb_key= as a query parameter "
+        "or configure the TMDB_API_KEY environment variable on the server."
+    )
+    if _cfg.CINEMETA_ENABLED and not imdb_id:
+        base += (
+            " Without a key, a request that carries imdb_id (or a tt... stremio_id) "
+            "can still render from Cinemeta."
+        )
+    return base
+
+
+async def _resolve_title_identity(
+    tmdb_id: str, imdb_id: str, media_type: str, tmdb_key: str | None,
+) -> "tuple[str, str, bool]":
+    """Settle the ordinary (non-anime) request's identity and spine.
+
+    Returns ``(tmdb_id, media_type, use_cinemeta)``. ``tmdb_id`` is the real
+    one when it is known — sent, or resolved from ``imdb_id`` — and otherwise
+    the IMDb id standing in, the way the anime path stands in its namespaced
+    id: downstream art fetching, log lines and detection keys are written in
+    terms of tmdb_id, and a non-numeric one simply skips the TMDB-only lookups.
+
+    The spine is TMDB whenever it can be: a key and a TMDB id. Cinemeta takes
+    over — when enabled, and only ever with an IMDb id to ask it about —
+    when there is no key, or when TMDB has no record for the IMDb id. With
+    neither spine available the request fails here, with the reason.
+
+    ``media_type`` may come back corrected: an IMDb id names one title, and a
+    keyed /find says which of TMDB's lists it lives in.
+    """
+    cinemeta_ok = _cfg.CINEMETA_ENABLED and bool(imdb_id)
+
+    if tmdb_id:
+        if tmdb_key:
+            return tmdb_id, media_type, False
+        if cinemeta_ok:
+            logger.info(f"No TMDB key — rendering {imdb_id} from Cinemeta")
+            return tmdb_id, media_type, True
+        raise HTTPException(status_code=400, detail=_no_tmdb_key_detail(imdb_id))
+
+    # IMDb-only. Resolved before the composite cache is consulted so the key
+    # matches what a client sending both ids produces; the mapping is
+    # persisted, so this is a local read after the first request.
+    if not tmdb_key and not cinemeta_ok:
+        raise HTTPException(status_code=400, detail=_no_tmdb_key_detail(imdb_id))
+    if _HTTP_CLIENT is None:
+        raise HTTPException(status_code=503, detail="Service unavailable")
+    try:
+        resolved = await resolve_imdb_to_tmdb(_HTTP_CLIENT, imdb_id, media_type, tmdb_key)
+    except IdResolveError as exc:
+        if not cinemeta_ok:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Could not resolve {imdb_id} to a TMDB id: {exc}",
+            ) from exc
+        logger.warning(f"{exc} — rendering {imdb_id} from Cinemeta instead")
+        return imdb_id, media_type, True
+
+    if resolved is not None and tmdb_key:
+        _kind = "tv" if media_type in ("tv", "series") else "movie"
+        if resolved["media_type"] != _kind:
+            logger.info(
+                f"{imdb_id} is a TMDB {resolved['media_type']}, not {media_type} — "
+                "using TMDB's type"
+            )
+            media_type = resolved["media_type"]
+        return resolved["tmdb_id"], media_type, False
+
+    if cinemeta_ok:
+        if tmdb_key:
+            logger.info(f"TMDB has no record for {imdb_id} — rendering from Cinemeta")
+        else:
+            logger.info(f"No TMDB key — rendering {imdb_id} from Cinemeta")
+        # Keep a Cinemeta-supplied TMDB id when there is one: it costs nothing
+        # (the document is what the spine renders from) and it is what the
+        # Globe / Emmy award lists are keyed on.
+        return (resolved["tmdb_id"] if resolved else imdb_id), media_type, True
+
+    raise HTTPException(
+        status_code=404,
+        detail=(
+            f"TMDB has no {media_type} record linked to {imdb_id}. "
+            "Send tmdb_id directly if you have one."
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Key resolution helpers
 # ---------------------------------------------------------------------------
@@ -1230,6 +1382,12 @@ class RequestConfig:
     # stacks it above the logo in textless mode; in original-art mode there is
     # no logo of ours to stack on, so it takes the bottom-left slot itself.
     landscape_badge_pos: str = "top_left"
+    # Colour link between the landscape band and its badge, when the band is
+    # tinted: "off" | "badge_follows_vignette" | "vignette_follows_badge".
+    landscape_color_link: str = "off"
+    # Size of the landscape info badge relative to its tuned size (1.0).  Font
+    # and padding scale together, so the pill keeps its proportions.
+    landscape_badge_scale: float = 1.0
     score_color_mode: int = 2
     score_custom_palette: CustomScorePalette | None = None
     sash_badge: bool = False              # legacy; superseded by sash_mode (kept for back-compat parsing)
@@ -1255,6 +1413,32 @@ class RequestConfig:
     greyscale_no_quality: bool = False  # greyscale art when no quality found (needs wait_for_quality)
     rating_text_color: tuple[int, int, int] | None = None
     sash_text_color:   tuple[int, int, int] | None = None
+
+
+# Settings the landscape renderer shares with portrait but wants set
+# differently out of the box.  Portrait leaves the tinted vignette opted-in,
+# because tinting is a transformative change to a shelf of posters; the
+# landscape layout was designed around it — one band, the badge coloured to
+# match — so a bare shape=landscape URL renders that look.  Local blending is
+# off because the band's seam on a 16:9 frame is usually the subjects, not the
+# set, and the whole-frame colour reads truer.  Everything not listed keeps the
+# RequestConfig default.
+_LANDSCAPE_DEFAULTS: dict[str, object] = {
+    "vignette_poster_color_bottom": True,
+    "vignette_color_ramp":          True,
+    "vignette_color_local":         False,
+    "vignette_color_saturation":    2.0,
+    "vignette_color_lightness":     1.3,
+    "vignette_color_blur":          1.0,
+    "landscape_color_link":         "badge_follows_vignette",
+    "landscape_art":                "textless",
+    "landscape_badge_pos":          "top_left",
+}
+
+
+def _apply_landscape_defaults(cfg: "RequestConfig") -> None:
+    for name, value in _LANDSCAPE_DEFAULTS.items():
+        setattr(cfg, name, value)
 
 
 def _parse_bool(val: str | None, default: bool) -> bool:
@@ -1407,6 +1591,11 @@ def build_request_config(params: dict) -> RequestConfig:
     power users can push past UI limits without bypassing safety.
     """
     cfg = RequestConfig()
+    # Landscape has its own defaults for a few shared settings (see
+    # _apply_landscape_defaults); they seed the config before the params are
+    # read, so an explicit parameter still wins.
+    if (params.get("shape") or "").strip().lower() == "landscape":
+        _apply_landscape_defaults(cfg)
 
     # Client profiles provide defaults only; explicit inset parameters below
     # remain authoritative for users who fine-tune either edge manually.
@@ -1468,9 +1657,13 @@ def build_request_config(params: dict) -> RequestConfig:
     # vignette_poster_color was a single toggle covering both bands before they were
     # split. Honour it as the default for each side so existing URLs and presets
     # keep rendering identically; an explicit per-band param wins over it.
-    _vpc_legacy = _b("vignette_poster_color", False)
-    cfg.vignette_poster_color_top    = _b("vignette_poster_color_top",    _vpc_legacy)
-    cfg.vignette_poster_color_bottom = _b("vignette_poster_color_bottom", _vpc_legacy)
+    # Absent, each side falls back to the config's own default — which for a
+    # landscape request is already the landscape one — not to a bare False.
+    _vpc_legacy = params.get("vignette_poster_color")
+    cfg.vignette_poster_color_top    = _b("vignette_poster_color_top",
+                                          _parse_bool(_vpc_legacy, cfg.vignette_poster_color_top))
+    cfg.vignette_poster_color_bottom = _b("vignette_poster_color_bottom",
+                                          _parse_bool(_vpc_legacy, cfg.vignette_poster_color_bottom))
     cfg.vignette_color_saturation = _f("vignette_color_saturation", cfg.vignette_color_saturation, 0.0, 3.0)
     cfg.vignette_color_blur       = _f("vignette_color_blur",       cfg.vignette_color_blur,       0.0, 1.0)
     cfg.vignette_color_lightness  = _f("vignette_color_lightness",  cfg.vignette_color_lightness,
@@ -1504,6 +1697,10 @@ def build_request_config(params: dict) -> RequestConfig:
     _ls_badge = (params.get("badge_pos") or "").strip().lower()
     if _ls_badge in ("top_left", "top_right", "logo"):
         cfg.landscape_badge_pos = _ls_badge
+    _ls_link = (params.get("landscape_color_link") or "").strip().lower()
+    if _ls_link in ("off", "badge_follows_vignette", "vignette_follows_badge"):
+        cfg.landscape_color_link = _ls_link
+    cfg.landscape_badge_scale = _f("landscape_badge_scale", cfg.landscape_badge_scale, 0.5, 2.5)
 
     cfg.sash_badge              = _b("sash_badge",              cfg.sash_badge)
     # sash_mode supersedes the legacy sash_badge bool; fall back to it for old
@@ -2276,6 +2473,8 @@ def _vignette_tint_band(
     blur: float,
     secondary: tuple[float, float, float] | None = None,
     lightness: float = 1.0,
+    columns: int = _VIGNETTE_TINT_COLUMNS,
+    ramp_columns: int = _VIGNETTE_RAMP_COLUMNS,
 ) -> Image.Image:
     """Colour field to paint one vignette band with, sampled from the poster art.
 
@@ -2311,6 +2510,10 @@ def _vignette_tint_band(
     colour: Value is still multiplied by strength, so saturation 0 stays exactly
     black however light this is set, and the guarantee that a colourless vignette
     is pixel-identical to the untinted one survives.
+
+    ``columns`` / ``ramp_columns`` are the cell counts the two defaults above
+    describe for a 500px band; a wider canvas passes its own so the local end
+    of the blur slider stays as fine as it is on a poster (see landscape.py).
     """
     band = src.crop(box).convert("RGB")
     bw, bh = band.size
@@ -2321,11 +2524,11 @@ def _vignette_tint_band(
     # contributes), then let the upscale do the smoothing — far cheaper than a
     # Gaussian over the full-size band and indistinguishable at this softness.
     detail = (1.0 - blur) ** _VIGNETTE_BLUR_DETAIL_CURVE
-    cols   = max(1, min(bw, int(round(_VIGNETTE_TINT_COLUMNS * detail))))
+    cols   = max(1, min(bw, int(round(columns * detail))))
     if secondary is not None:
         # The ramp needs columns to ramp across, and blur has just taken them away
         # at the top of its range — give it back a floor of its own.
-        cols = max(1, min(bw, max(cols, _VIGNETTE_RAMP_COLUMNS)))
+        cols = max(1, min(bw, max(cols, ramp_columns)))
     rows   = max(1, min(bh, max(1, cols // 2)))
     field  = np.asarray(band.resize((cols, rows), Image.Resampling.BOX), dtype=np.float32)
     if secondary is None:
@@ -3660,6 +3863,11 @@ async def _run_cache_warm_cycle(client: httpx.AsyncClient) -> None:
     tmdb_calls      = 0
     mdblist_calls   = 0
     quality_calls   = 0
+    # Burst 429/503s the warmer has run into this cycle. The next fetch sleeps
+    # through the pause, so one is just a delay; a run of them means the
+    # address is saturated by something else (or MDBList is down) and the
+    # budget is better kept for the next cycle.
+    burst_pauses    = 0
     detection_calls = 0
     titles_seen     = 0
 
@@ -3863,6 +4071,7 @@ async def _run_cache_warm_cycle(client: httpx.AsyncClient) -> None:
 
         async def _fetch_rating_warm(_key: str):
             async with _mdblist_semaphore:
+                await _mdblist_wait_for_slot()
                 return await fetch_rating(
                     client, _key, genre_ids, media_type,
                     media_id=warm_media_id, provider=warm_provider,
@@ -3873,6 +4082,19 @@ async def _run_cache_warm_cycle(client: httpx.AsyncClient) -> None:
 
         if isinstance(result, _RateLimited):
             backoff_secs, replacement = _mark_mdblist_rate_limit(warm_canonical_id, effective_mdblist_key, result)
+            if not result.quota_exhausted:
+                burst_pauses += 1
+                logger.warning(
+                    f"Cache warm: MDBList burst limit hit on {warm_canonical_id}; "
+                    f"pausing MDBList calls for {backoff_secs:.0f}s"
+                )
+                if burst_pauses >= _CACHE_WARM_MAX_BURST_PAUSES:
+                    logger.warning(
+                        f"Cache warm: MDBList burst limit hit {burst_pauses} times this cycle "
+                        "— stopping MDBList warming for this cycle"
+                    )
+                    mdblist_budget = mdblist_calls
+                continue  # title stays uncached; the next fetch waits out the pause
             logger.warning(
                 f"Cache warm: MDBList rate-limited on {warm_canonical_id}; "
                 f"key cooling down for {backoff_secs:.0f}s"
@@ -4443,8 +4665,12 @@ _NEVER_OMITTED_PARAMS = frozenset({
 })
 
 
-def _render_param_defaults() -> dict:
+def _render_param_defaults(shape: str = "portrait") -> dict:
     """Every render setting's default value, keyed by its query-parameter name.
+
+    ``shape`` picks the defaults for that layout: landscape seeds a few shared
+    settings differently (see _LANDSCAPE_DEFAULTS), and the configurator must
+    omit and seed against the set the server will actually use for that URL.
 
     Read straight off a freshly built RequestConfig rather than restated here,
     because the whole point is that the configurator can drop a parameter it
@@ -4457,6 +4683,8 @@ def _render_param_defaults() -> dict:
     primary_client, so there is no single answer to publish.
     """
     cfg = RequestConfig()
+    if shape == "landscape":
+        _apply_landscape_defaults(cfg)
     defaults: dict = {}
     for spec in dataclasses.fields(cfg):
         if spec.name in _NEVER_OMITTED_PARAMS:
@@ -4507,6 +4735,7 @@ async def server_caps(access_key: str = ""):
         # A generated URL was running ~1500 characters, most of it restating
         # defaults, against metadata clients that truncate at 2000.
         "param_defaults":        _render_param_defaults(),
+        "param_defaults_landscape": _render_param_defaults("landscape"),
         "never_omitted_params":  sorted(_NEVER_OMITTED_PARAMS),
         "sash_priority_default": list(_cfg.SASH_PRIORITY),
         "sash_priority_diff_seed": _SASH_DIFF_SEED,
@@ -4534,7 +4763,10 @@ _configurator_etag: str | None = None
 # "5": mode 6 adds a tier-coloured bookmark at the poster top-left corner.
 # "6": the mode 6 bookmark is redrawn with rounded tips and a curved inner edge,
 #      so composites cached with the old hard-edged triangle look stale.
-_RENDER_CACHE_VERSION = "6"
+# "7": landscape layout retuned — shallower band, larger shadowed info pill,
+#      logo no longer capped by the band, wide logos preferred — so every
+#      landscape composite cached before it is the old layout.
+_RENDER_CACHE_VERSION = "7"
 _render_assets_signature = "startup"
 
 
@@ -4702,6 +4934,11 @@ async def _build_stats() -> dict:
             # outliving their back-off entries again.
             "rating_fail_counters":      len(_rating_fail_count),
             "mdblist_keys":              mdblist_keys,
+            # Seconds left on the per-IP burst pause (0 when none). Non-zero
+            # here with daily_remaining still high is the burst limit, not the
+            # quota — see MDBLIST_MIN_INTERVAL.
+            "mdblist_burst_pause_secs":  round(_mdblist_ip_pause_remaining(now)),
+            "mdblist_min_interval":      _cfg.MDBLIST_MIN_INTERVAL,
             "composite_cache_disabled":  _cfg.DISABLE_COMPOSITE_CACHE,
             "svg_logo_support":          svg_logo_supported(),
         },
@@ -4942,7 +5179,7 @@ async def resolve_imdb(
 
 @app.get("/logo")
 async def get_logo(
-    tmdb_id: str,
+    tmdb_id: str = "",
     type: str = "movie",
     lang: str = "en",
     imdb_id: str | None = None,
@@ -4955,27 +5192,46 @@ async def get_logo(
     Checks the local file cache first (same cache the poster endpoint uses),
     then falls through to TMDB and Metahub as needed.  No rendering is applied —
     callers receive the original PNG exactly as stored.
+
+    Either id identifies the title, as on /poster. Without a TMDB key (or when
+    TMDB has no record for the IMDb id) the Metahub logo is the only source.
     """
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    if _HTTP_CLIENT is None:
-        raise HTTPException(status_code=503, detail="Service unavailable")
+    _check_type(type)
+    tmdb_id = (tmdb_id or "").strip()
+    imdb_id = _normalise_optional_id(imdb_id, "imdb_id")
+    if tmdb_id:
+        _check_tmdb_id(tmdb_id)
+    if imdb_id:
+        _check_imdb_id(imdb_id)
+    if not tmdb_id and not imdb_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required parameter: /logo needs tmdb_id or imdb_id.",
+        )
 
     effective_tmdb_key = _resolve_tmdb_key((tmdb_key or "").strip())
-    if not effective_tmdb_key:
-        raise HTTPException(status_code=503, detail="No TMDB API key configured")
+    tmdb_id, type, use_cinemeta = await _resolve_title_identity(
+        tmdb_id, imdb_id, type, effective_tmdb_key
+    )
     media_type = "tv" if type in ("tv", "series") else "movie"
     effective_lang = (lang or "en").strip() or "en"
 
+    if _HTTP_CLIENT is None:
+        raise HTTPException(status_code=503, detail="Service unavailable")
     client = _HTTP_CLIENT
 
-    _, _, logos, _, _, _, _, tmdb_data = await _coalesced_fetch_poster_metadata(
-        client, tmdb_id, effective_tmdb_key, media_type, effective_lang
-    )
+    if use_cinemeta:
+        logos, tmdb_data = [], {"imdb_id": imdb_id}
+    else:
+        _, _, logos, _, _, _, _, tmdb_data = await _coalesced_fetch_poster_metadata(
+            client, tmdb_id, effective_tmdb_key, media_type, effective_lang
+        )
 
     # Use imdb_id from metadata if not supplied — needed for Metahub fallback
-    effective_imdb_id = (imdb_id or "").strip() or tmdb_data.get("imdb_id") or None
+    effective_imdb_id = imdb_id or tmdb_data.get("imdb_id") or None
     original_language = tmdb_data.get("original_language")
 
     logo_image = await fetch_logo(
@@ -5199,6 +5455,10 @@ async def get_poster(
     anime_namespace, anime_id = _resolve_anime_request(anilist_id, kitsu_id, stremio_id)
     is_anime = anime_namespace is not None
     anime_key = anime.namespaced_id(anime_namespace, anime_id) if is_anime else ""
+    # True when Cinemeta (not TMDB) is the art and metadata spine for this
+    # request — no TMDB key, or TMDB has no record for the IMDb id. Set by
+    # _resolve_title_identity on the ordinary path; never for anime.
+    use_cinemeta = False
 
     if is_anime:
         # Both are optional on this path, but must still be well-formed if sent.
@@ -5215,30 +5475,36 @@ async def get_poster(
         if not tmdb_id:
             tmdb_id = anime_key
     else:
-        # tmdb_id is the one required identity: it selects the artwork and the
-        # metadata spine, and nothing renders without it. imdb_id is optional
-        # enrichment.
+        # Either id identifies the title. tmdb_id selects the artwork and the
+        # metadata spine directly; an imdb_id on its own is resolved to one
+        # (TMDB's /find with a key, Cinemeta's moviedb_id without) before
+        # anything else looks at it, so the rest of the pipeline — and the
+        # composite cache key — sees the same identity a client sending both
+        # would have produced. imdb_id alongside tmdb_id is optional enrichment.
         #
-        # It used to be required too, which meant a title TMDB has no IMDb link
-        # for — TMDB returns imdb_id: null for these — could not be rendered at
-        # all, and the 400 named a parameter the caller had no way to supply.
-        # Handing the empty string to the format checks was worse still: it
-        # reported a missing id as malformed, and named whichever param happened
-        # to be checked first.
-        if not tmdb_id:
+        # Missing both is the one thing that can't render, and the 400 names
+        # both so a template author knows either would do. Handing the empty
+        # string to the format checks was worse: it reported a missing id as
+        # malformed, and named whichever param happened to be checked first.
+        if tmdb_id:
+            _check_tmdb_id(tmdb_id)
+        if imdb_id:
+            _check_imdb_id(imdb_id)
+        if not tmdb_id and not imdb_id:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Missing required parameter: tmdb_id. /poster needs tmdb_id — "
-                    "it selects the artwork and metadata. imdb_id is optional; "
-                    "supplying it adds the IMDb-keyed enrichment (Metahub logo "
-                    "fallback, digital-release detection, stream-quality badges)."
+                    "Missing required parameter: /poster needs tmdb_id or imdb_id "
+                    "(or a tt... stremio_id) to identify the title. Sending both "
+                    "is best: tmdb_id selects the artwork and metadata, imdb_id "
+                    "adds the IMDb-keyed enrichment (Metahub logo fallback, "
+                    "digital-release detection, stream-quality badges)."
                 ),
             )
-        _check_tmdb_id(tmdb_id)
-        if imdb_id:
-            _check_imdb_id(imdb_id)
-        has_tmdb_id = True
+        tmdb_id, type, use_cinemeta = await _resolve_title_identity(
+            tmdb_id, imdb_id, type, _resolve_tmdb_key(tmdb_key)
+        )
+        has_tmdb_id = _TMDB_ID_RE.match(tmdb_id) is not None
 
     canonical_id = _canonical_rating_id(imdb_id, anime_key, tmdb_id)
 
@@ -5287,14 +5553,13 @@ async def get_poster(
 
     # An anime request gets its art and metadata from the provider, so a TMDB
     # key is optional there even when a tmdb_id is supplied — it only unlocks
-    # the extra TMDB-keyed lookups (trending, movie release status).
-    if not effective_tmdb_key and not is_anime:
+    # the extra TMDB-keyed lookups (trending, movie release status). The same
+    # holds for a Cinemeta-spined request, which is how a key-less instance
+    # renders at all.
+    if not effective_tmdb_key and not is_anime and not use_cinemeta:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "No TMDB API key available. Either provide tmdb_key= as a query parameter "
-                "or configure the TMDB_API_KEY environment variable on the server."
-            ),
+            detail=_no_tmdb_key_detail(imdb_id),
         )
 
     raw_params = {
@@ -5377,6 +5642,10 @@ async def get_poster(
             else ""
         )
         _server_sig = "|server=" + _server_render_signature()
+        # A Cinemeta-spined render is different art from the TMDB render of the
+        # same ids, so the two must not share a composite entry. Appended only
+        # on that path, so every existing TMDB entry keeps its key.
+        _spine_sig = "|art=cinemeta" if use_cinemeta else ""
         _params_hash = hashlib.sha256(
             (
                 "&".join(f"{k}={v}" for k, v in sorted(raw_params.items()))
@@ -5385,6 +5654,7 @@ async def get_poster(
                 + _rating_policy_sig
                 + _dataset_sig
                 + _server_sig
+                + _spine_sig
             ).encode()
         ).hexdigest()[:16]
         # The anime key has to be part of this: the same imdb/tmdb pair renders
@@ -5655,6 +5925,7 @@ async def get_poster(
         # is_anime, which stays true for a request that fell back to TMDB art.
         using_anime_art = False
         _anime_art_missing = False
+        _cinemeta_missing = False
         if is_anime:
             # Neither provider ships title logos, so when a tmdb_id came with
             # the request pull TMDB's metadata alongside — purely for its logo
@@ -5705,6 +5976,34 @@ async def get_poster(
             ) = _anime_meta
             if using_anime_art and _logo_meta is not None:
                 logos = _logo_meta[2]
+                if rcfg.shape == "landscape":
+                    # Neither provider ships a backdrop — one cover image is
+                    # all they have — so the landscape branch below had
+                    # nothing to draw on and fell through to the genre
+                    # canvas.  TMDB's backdrops are already in hand from the
+                    # logo lookup; the cover stays the portrait art.
+                    backdrop_path = _logo_meta[6]
+                    tmdb_data = {
+                        **tmdb_data,
+                        "text_backdrop_path": _logo_meta[7].get("text_backdrop_path"),
+                    }
+        elif use_cinemeta:
+            # Cinemeta is the spine: art, title, genres, dates and status all
+            # come from its one document, shaped like a TMDB title with no
+            # textless poster (see cinemeta.normalise), so the ordinary
+            # backdrop-to-portrait, original-art and logo rules apply unchanged.
+            _cm_meta = await cinemeta.fetch_cinemeta_metadata(client, imdb_id, type)
+            if _cm_meta is None:
+                # No entry, or Cinemeta is unavailable — the genre canvas, and
+                # the render is kept out of the composite cache (below) so an
+                # outage isn't pinned for the cache TTL.
+                logger.info(f"Cinemeta has nothing for {imdb_id} — fallback canvas will be served")
+                _cm_meta = cinemeta.empty_metadata()
+                _cinemeta_missing = True
+            (
+                genre_ids, is_textless, logos, release_year, title,
+                poster_path, backdrop_path, tmdb_data,
+            ) = _cm_meta
         else:
             genre_ids, is_textless, logos, release_year, title, poster_path, backdrop_path, tmdb_data = (
                 await _coalesced_fetch_poster_metadata(
@@ -5918,6 +6217,23 @@ async def get_poster(
             ):
                 nonlocal _rating_backoff_active, _mdblist_unavailable_reason
                 async with _mdblist_semaphore:
+                    # Burst pause / pacing are per process, not per key, so
+                    # they come before any key decision. A short pause is
+                    # worth sitting out: the poster comes back complete and
+                    # cacheable instead of provisional and re-rendered later.
+                    _pause_left = _mdblist_ip_pause_remaining()
+                    if _pause_left > _MDBLIST_BURST_WAIT_MAX:
+                        logger.debug(
+                            f"Rating fetch for {canonical_id} skipped "
+                            f"(MDBList burst pause; {_pause_left:.0f}s remaining)"
+                        )
+                        _rating_backoff_active = True
+                        _mdblist_unavailable_reason = "MDBList burst pause active"
+                        return None, (
+                            cached_ratings_dict, cached_genre,
+                            cached_release_date, [], cached_age_rating,
+                        )
+                    await _mdblist_wait_for_slot()
                     _fetch_key = _key
                     _fetch_now = asyncio.get_running_loop().time()
                     if (
@@ -5983,6 +6299,21 @@ async def get_poster(
 
         is_no_poster = poster_path is None and not _use_backdrop
 
+        async def _metahub_art() -> "tuple[str | None, str | None]":
+            """(poster url, background url) on Cinemeta's Metahub CDN for this
+            title, for the no-art rescue tiers below. Both None unless the
+            feature is on, the title has an IMDb id, and Cinemeta knows it.
+            Not on a Cinemeta-spined render (that art is already in play) and
+            not for anime (the providers' cover art has its own rules)."""
+            if (not _cfg.CINEMETA_ENABLED or use_cinemeta or is_anime
+                    or not effective_imdb_id):
+                return None, None
+            _has_ps, _has_bg = await cinemeta.probe_art(client, effective_imdb_id)
+            return (
+                cinemeta.poster_url(effective_imdb_id) if _has_ps else None,
+                cinemeta.background_url(effective_imdb_id) if _has_bg else None,
+            )
+
         # ------------------------------------------------------------------
         # Landscape short-circuit.
         #
@@ -6018,6 +6349,13 @@ async def get_poster(
                 # already in the art; don't double it with our logo.
                 is_textless = bool(backdrop_path)
             _use_backdrop = False
+            if _ls_path is None:
+                # Metahub's background is a textless backdrop of the same class
+                # as TMDB's, so it is a straight substitute before the canvas.
+                _, _ls_path = await _metahub_art()
+                if _ls_path is not None:
+                    logger.info(f"No TMDB backdrop for {tmdb_id} — landscape using Metahub background")
+                    is_textless = True
             is_no_poster  = _ls_path is None
             if _ls_path is None:
                 logger.info(f"No backdrop for {tmdb_id} — landscape falls back to genre canvas")
@@ -6075,11 +6413,35 @@ async def get_poster(
                 _backdrop_rescued = True
                 _image_coro = _resolved(_tvdb_ps)
             else:
-                # Prefer the atmospheric genre background (minimal or photoreal set,
-                # per the request); fall back to the flat genre-tinted gradient if no
-                # background art exists for this genre in either set.
-                _bg = _load_genre_background(_tmdb_genre, rcfg.fallback_bg_style)
-                _image_coro = _resolved(_bg if _bg is not None else _make_fallback_canvas(genre_ids))
+                # Last art tier before the canvas: Cinemeta's Metahub CDN. Its
+                # background is treated exactly like a TMDB backdrop (textless
+                # by design; portrait crop, our logo on top, the usual scan
+                # gates), and its poster like TMDB's official one-sheet (title
+                # baked in, served as-is).
+                _mh_ps, _mh_bg = await _metahub_art()
+                if _mh_bg is not None:
+                    logger.info(f"No TMDB art for {tmdb_id} — using Metahub background as portrait fallback")
+                    backdrop_path = _mh_bg
+                    _use_backdrop = True
+                    is_textless   = True
+                    is_no_poster  = False
+                    _backdrop_avoid_text = (
+                        _cfg.TEXTLESS_TEXT_DETECTION and _vote_detection_ok
+                    )
+                    _image_coro = fetch_backdrop_image(
+                        client, tmdb_id, backdrop_path, avoid_text=_backdrop_avoid_text)
+                elif _mh_ps is not None:
+                    logger.info(f"No TMDB art for {tmdb_id} — using Metahub poster as-is")
+                    poster_path  = _mh_ps
+                    is_textless  = False
+                    is_no_poster = False
+                    _image_coro  = fetch_poster_image(client, tmdb_id, type, poster_path)
+                else:
+                    # Prefer the atmospheric genre background (minimal or photoreal set,
+                    # per the request); fall back to the flat genre-tinted gradient if no
+                    # background art exists for this genre in either set.
+                    _bg = _load_genre_background(_tmdb_genre, rcfg.fallback_bg_style)
+                    _image_coro = _resolved(_bg if _bg is not None else _make_fallback_canvas(genre_ids))
         else:
             # Option A: the title has only text-bearing art (no textless poster
             # or backdrop).  Before settling for the busy official poster, try a
@@ -6187,14 +6549,13 @@ async def get_poster(
             if _use_backdrop:
                 _crop_variant = "ta" if _backdrop_avoid_text else "plain"
                 _det_src = f"bd:{backdrop_path}:{_CROP_VERSION}:{_crop_variant}"
-                _image_cache_key = (
-                    f"backdrop_{tmdb_id}_{backdrop_path.strip('/')}_{_CROP_VERSION}"
-                    + ("_ta" if _backdrop_avoid_text else "")
+                _image_cache_key = backdrop_image_cache_key(
+                    tmdb_id, backdrop_path, _backdrop_avoid_text
                 )
                 _det_source = "backdrop"
             else:
                 _det_src = f"ps:{poster_path}"
-                _image_cache_key = f"{type}_{tmdb_id}_{poster_path.strip('/')}"
+                _image_cache_key = poster_image_cache_key(tmdb_id, type, poster_path)
                 _det_source = "poster"
 
             _det_key = (
@@ -6260,6 +6621,10 @@ async def get_poster(
                     logo_priority=rcfg.logo_priority,
                     use_metahub=use_metahub,
                     secondary_language=_effective_secondary,
+                    # The landscape logo box is wide and short, so a wordmark
+                    # fills it where a stacked logo of the same title is
+                    # capped small by its height.  See WIDE_LOGO_MIN_ASPECT.
+                    prefer_wide=_is_landscape,
                 )
 
             async def _tvdb():
@@ -6309,23 +6674,37 @@ async def get_poster(
         elif _rating_backoff_active:
             effective_mdblist_key = None
 
-        # A rate-limited server key gets one same-request rescue attempt on the
-        # next healthy configured key. Query-supplied keys remain isolated.
+        # A rate-limited fetch gets one same-request rescue attempt. For a
+        # quota 429 that is the next healthy configured key (query-supplied
+        # keys remain isolated). For a per-IP burst 429/503 a sibling key would
+        # be refused too, so the rescue is the *same* key after the pause,
+        # which the gated fetch sleeps through — provided the pause is short
+        # enough to be worth holding the render for.
         #
         # This rescue is hand-rolled rather than routed through _with_retry on
         # purpose: _with_retry re-calls blindly on FETCH_FAILED, so wrapping the
         # rating fetch would fire a second request at the key that just returned
         # 429 — before the cooldown below can register it — doubling load on a
-        # key that explicitly asked us to back off. Rotate first, then retry.
+        # key that explicitly asked us to back off. Record first, then retry.
+        _rate_limit_recorded = None  # the _RateLimited already passed to _mark_mdblist_rate_limit
         if isinstance(rating_result, _RateLimited) and effective_mdblist_key:
             _failed_key = effective_mdblist_key
             _backoff_secs, _rescue_key = _mark_mdblist_rate_limit(
                 canonical_id, _failed_key, rating_result
             )
-            logger.warning(
-                f"MDBList {_mdblist_server_key_label(_failed_key)} rate-limited "
-                f"for {canonical_id}; cooling down for {_backoff_secs:.0f}s"
-            )
+            _rate_limit_recorded = rating_result
+            if not rating_result.quota_exhausted:
+                logger.warning(
+                    f"MDBList burst limit hit on {canonical_id}; pausing all "
+                    f"MDBList calls for {_backoff_secs:.0f}s"
+                )
+                if _backoff_secs <= _MDBLIST_BURST_WAIT_MAX:
+                    _rescue_key = _failed_key
+            else:
+                logger.warning(
+                    f"MDBList {_mdblist_server_key_label(_failed_key)} rate-limited "
+                    f"for {canonical_id}; cooling down for {_backoff_secs:.0f}s"
+                )
             if _rescue_key is not None:
                 effective_mdblist_key = _rescue_key
                 logger.warning(
@@ -6391,15 +6770,22 @@ async def get_poster(
 
         if rating_failed:
             if rate_limited:
-                _retry_key = _rating_retry_key(canonical_id, effective_mdblist_key)
-                if _retry_key not in _rating_backoff:
+                # Already recorded above unless this is the rescue attempt's
+                # own refusal, which is a fresh signal.
+                if rating_result is not _rate_limit_recorded:
                     backoff_secs, _ = _mark_mdblist_rate_limit(
                         canonical_id, effective_mdblist_key, rating_result
                     )
-                    logger.warning(
-                        f"MDBList rate-limited {canonical_id}; key cooling down for "
-                        f"{backoff_secs:.0f}s"
-                    )
+                    if rating_result.quota_exhausted:
+                        logger.warning(
+                            f"MDBList rate-limited {canonical_id}; key cooling down for "
+                            f"{backoff_secs:.0f}s"
+                        )
+                    else:
+                        logger.warning(
+                            f"MDBList burst limit hit again on {canonical_id}; pausing all "
+                            f"MDBList calls for {backoff_secs:.0f}s"
+                        )
             else:
                 # Network / timeout failure — escalating back-off so a transient
                 # hiccup retries quickly while a sustained outage backs off further.
@@ -6803,12 +7189,14 @@ async def get_poster(
         #                            throttle or a blip rather than a real absence.
         #                            Caching the fallback would pin TMDB art for
         #                            the whole composite TTL, so let it re-render.
+        #   _cinemeta_missing      — same, for a Cinemeta-spined render that got
+        #                            the genre canvas because Cinemeta had nothing.
         #
         # The same flag decides what the *client* is told: a render we won't
         # keep must not be handed an ETag either (see _apply_poster_cache_headers).
         _render_provisional = bool(
             quality_pending or _detection_deferred or rating_failed
-            or _rating_backoff_active or _anime_art_missing
+            or _rating_backoff_active or _anime_art_missing or _cinemeta_missing
         )
         _composite_expires_at: int | None = None
         if final_cache_key is not None and not _render_provisional:
@@ -6860,6 +7248,11 @@ async def get_poster(
             _render_fut.set_exception(exc)
         status = exc.response.status_code
         if status == 404:
+            # Metahub art the probe vouched for has gone: forget the probe so
+            # the next request re-checks (and falls through to the canvas)
+            # instead of failing the same way for the cache window.
+            if imdb_id and _cfg.CINEMETA_ENABLED:
+                cinemeta.invalidate_art_probe(imdb_id)
             # TMDB returned metadata with a poster/image path that no longer exists.
             # Invalidate the (per-language) metadata cache so the next request
             # re-fetches fresh data.

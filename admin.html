@@ -738,6 +738,7 @@ function renderOverview() {
     ['Trending sources', s.trending ? [(s.trending.source_movie ? 'custom movie list' : 'TMDB movies'), (s.trending.source_tv ? 'custom TV list' : 'TMDB TV')].join(' · ') : '—'],
     ['Rating fetches in flight', fmtNum(rt.rating_fetches_in_flight)],
     ['Titles in rating back-off', fmtNum(rt.rating_backoff_titles)],
+    ['MDBList burst pause', rt.mdblist_burst_pause_secs ? `<span style="color:var(--danger)">${rt.mdblist_burst_pause_secs}s</span> · per-IP limit hit, all keys paused` : (rt.mdblist_min_interval ? `none · paced at ${Math.round(1 / rt.mdblist_min_interval)} calls/s` : 'none · pacing off')],
     ['Quality source back-off', rt.quality_source_backoff_secs ? `${rt.quality_source_backoff_secs}s` : 'none'],
     ['Composite cache', rt.composite_cache_disabled ? 'disabled' : 'on'],
     ['Settings file', s.settings_file ? `${esc(s.settings_file.path)} · ${s.settings_file.keys} saved · ${s.settings_file.writable ? 'writable' : '<span style="color:var(--danger)">not writable</span>'}` : '—'],

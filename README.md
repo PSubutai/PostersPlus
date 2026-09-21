@@ -155,7 +155,7 @@ Grouped as the admin dashboard groups them. Defaults apply when neither the dash
 
 | Variable | Default | Description |
 |---|---|---|
-| `TMDB_API_KEY` | - | Fetches posters, logos and metadata. Required unless every client passes its own tmdb_key. |
+| `TMDB_API_KEY` | - | Fetches posters, logos and metadata. Strongly recommended; without one (and no per-client tmdb_key) titles render from Cinemeta and need an imdb_id on the request. |
 | `MDBLIST_API_KEY` | - | Ratings, awards, keywords and age ratings. Without it the score reads N/A and the MDBList-only sashes are unavailable. |
 | `MDBLIST_API_KEY_2` | - | Retried in the same request when the primary key is rate-limited; a key that has spent its daily quota stays parked until MDBList's reset. |
 | `TVDB_API_KEY` | - | Optional TheTVDB v4 key. When set, TVDB is a fallback art source (logos, backdrops, optionally posters) for titles where TMDB returns nothing usable, reducing fallbacks to text titles and genre canvases. Blank disables it entirely. |
@@ -249,6 +249,12 @@ Grouped as the admin dashboard groups them. Defaults apply when neither the dash
 | `TVDB_LOGO_PRIORITY` | `3` | Where a TVDB clearlogo sits in the logo chain: 1 before TMDB and Metahub, 2 after TMDB but before Metahub, 3 last resort (only when both have nothing). TVDB logos are often higher quality, so 1 or 2 improve results but change logos currently sourced from TMDB or Metahub. One of `1`, `2`, `3`. |
 | `TVDB_CONCURRENCY` | `3` | Maximum concurrent outbound TVDB requests per worker. |
 
+#### Cinemeta fallback
+
+| Variable | Default | Description |
+|---|---|---|
+| `CINEMETA_ENABLED` | `true` | Render from Stremio's Cinemeta catalogue (IMDb-keyed, no API key) when no TMDB key is available or TMDB has no record for the IMDb id, and try its Metahub art before the genre canvas when TMDB has no artwork. Needs an imdb_id (or a tt... stremio_id) on the request. `true` or `false`. |
+
 #### Anime sources
 
 | Variable | Default | Description |
@@ -271,6 +277,7 @@ Grouped as the admin dashboard groups them. Defaults apply when neither the dash
 | `QUALITY_BG_CONCURRENCY` | `5` | Caps concurrent background quality fetches when many uncached titles appear at once. |
 | `QUALITY_WAIT_TIMEOUT` | `30` | How long a request with wait_for_quality=true waits for the scraper. |
 | `MDBLIST_CONCURRENCY` | `3` | Maximum concurrent outbound MDBList requests per worker. MDBList drops requests past roughly 3 per key. |
+| `MDBLIST_MIN_INTERVAL` | `0.2` | Minimum seconds between the start of one outbound MDBList request and the next, across live renders and cache warming. MDBList has a short per-IP burst limit on top of the daily quota, and 3 unpaced concurrent calls can reach it during a cold catalog warm; 0.2 holds the server to 5 calls per second. 0 turns the pacing off. |
 | `POSTER_RENDER_CONCURRENCY` | `8` | Maximum uncached poster renders in flight per worker. Cache hits are never held back; a burst of fresh renders (a cold catalog grid) queues past this rather than exhausting the upstream connection pool. Raise on a machine with headroom, lower on a small VPS. |
 
 <!-- settings-reference:end -->
@@ -412,9 +419,15 @@ Posters are served at `/poster` with parameters controlling every aspect of rend
 https://yourdomain.com/poster?tmdb_id={tmdb_id}&type={type}
 ```
 
-`tmdb_id` is the only required identity: it selects the artwork and the metadata. `imdb_id` is optional enrichment — send it if your client has one reliably (the Plex and Jellyfin sync scripts do) and it keys the rating cache by IMDb id, sharing that row with every other client. Don't put it in an AIOMetadata template: TMDB has no IMDb link for some titles, and a required placeholder with no value makes the resolver discard the entire URL, so those titles get no poster at all.
+Either id identifies the title — `tmdb_id`, `imdb_id`, or a `tt…` value in `stremio_id` — and sending both is best. `tmdb_id` selects the artwork and the metadata directly. An `imdb_id` on its own is resolved to a TMDB id first (TMDB's `/find`, persisted so it costs one call per title ever), and the request then renders exactly as if the client had sent both; if TMDB says the IMDb id is a series rather than a movie, TMDB's type wins. `imdb_id` alongside `tmdb_id` is optional enrichment — send it if your client has one reliably (the Plex and Jellyfin sync scripts do) and it keys the rating cache by IMDb id, sharing that row with every other client. Don't put `{imdb_id}` in an AIOMetadata template: TMDB has no IMDb link for some titles, and a required placeholder with no value makes the resolver discard the entire URL, so those titles get no poster at all. Use `{tmdb_id}` and `stremio_id={id}` there instead.
 
 For a title with no IMDb id anywhere, TMDB artwork, logos, MDBList ratings, awards, sashes, genres and release status all work normally. Only the IMDb-keyed extras are unavailable: Metahub logo fallback, digital-release detection, and automatic stream-quality badges (an explicit `quality=` still works, which is why the Plex and Jellyfin sync scripts keep full badges either way).
+
+#### Without a TMDB key
+
+A TMDB key is still the recommended setup — it is where textless posters, poster/logo language selection, the TMDB-keyed sashes (trending, release status) and TMDB's own rating come from. But an instance with no key on the server and none on the request can still render any title it has an IMDb id for, from Stremio's Cinemeta catalogue (`CINEMETA_ENABLED`, on by default): its Metahub background is cropped to portrait with the logo composited on top, exactly like a TMDB backdrop; `textless=false` serves its official one-sheet; landscape uses the background as shot. Title, year, genre, runtime, status, cast and director come from the same document, so the genre canvas, info sash and studio/director/cast sashes work; MDBList ratings, awards and quality badges are IMDb-keyed and unaffected. Cinemeta also carries TMDB's id for most titles, which is what resolves an `imdb_id`-only request without a key.
+
+The same path is taken when a key *is* configured but TMDB has no record for the IMDb id, and Cinemeta's art is tried as a last tier before the genre canvas when TMDB knows a title but has no artwork. A `tmdb_id`-only request without a key cannot be served — Cinemeta is IMDb-keyed — and is refused with a 400 saying so. The configurator's search and preview still need a TMDB key.
 
 Append `&debug=1` to any poster URL to receive a JSON response with all computed metadata (score, genre, sash label, quality tokens, award data, matched cast/directors) instead of rendering the image. Useful for diagnosing unexpected sashes or missing ratings.
 
@@ -434,6 +447,11 @@ Two optional parameters control the landscape-specific choices:
 
 - `landscape_art=textless|original` selects a language-neutral backdrop with a composited logo (the default) or the highest-ranked language-tagged backdrop with its own title treatment.
 - `badge_pos=top_left|top_right|logo` places the age badge in a top corner or alongside the composited logo.
+- Landscape defaults differ from portrait for the shared vignette settings: a bare `shape=landscape` URL renders with `vignette_poster_color_bottom=true`, two-tone on, local blending off, saturation 2.0, lightness 1.3, blur 1.0 and `landscape_color_link=badge_follows_vignette`. Pass any of them explicitly to override.
+- `landscape_badge_scale=0.5–2.5` scales the info badge (type and padding together); `1.0` is the tuned size.
+- `landscape_color_link=off|badge_follows_vignette|vignette_follows_badge` links the colour of the info badge and a tinted band (`vignette_poster_color_bottom=true`): the badge takes the band's colour, or the band takes the whole-frame colour the badge uses. Only the hue is shared — the band still darkens it, the badge still lifts it for legibility.
+
+The configurator previews both shapes: the landscape button in the preview header switches the live preview to the 16:9 render, reveals the landscape choices under Core → Landscape (art) and Sash → Badge (position, size, colour link), and makes **Copy config** copy the landscape URL, so a client with a landscape slot can be given the same settings as the portrait one. The landscape URL carries only the settings the landscape renderer reads (identity, language, sash priority and release-status filters, weights, Hide Genre, Textless, and the bottom vignette colour with its sliders); the Rating, Logo and Quality tabs are hidden while it is showing, since nothing on them applies. Your portrait settings are kept — switching back restores them.
 
 Landscape renders deliberately skip stream-quality fetching because this layout does not display quality tokens.
 
@@ -445,7 +463,7 @@ Landscape renders deliberately skip stream-quality fetching because this layout 
 https://yourdomain.com/logo?tmdb_id={tmdb_id}&type={type}&lang=en
 ```
 
-`imdb_id` is optional and enables Metahub fallback when TMDB metadata cannot supply one. `access_key` and `tmdb_key` follow the same rules as `/poster`.
+Either id identifies the title, as on `/poster`. With both, `imdb_id` enables the Metahub fallback when TMDB metadata cannot supply one; without a TMDB key, Metahub is the only logo source. `access_key` and `tmdb_key` follow the same rules as `/poster`.
 
 ### Anime IDs (AniList / Kitsu)
 

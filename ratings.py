@@ -167,7 +167,11 @@ async def fetch_rating(
 
     quota = _record_mdblist_quota(mdblist_key, resp.headers)
 
-    if resp.status_code == 429:
+    # 429 is either the daily quota or the per-IP burst limit; 503 is how the
+    # burst limit first shows itself (a run of 503s, then 429 + Retry-After
+    # for every key on the address). Both go back as _RateLimited so the
+    # caller pauses instead of walking the network-failure ladder.
+    if resp.status_code in (429, 503):
         retry_after: float | None = None
         raw = resp.headers.get("retry-after")
         if raw:
@@ -181,14 +185,19 @@ async def fetch_rating(
             except ValueError:
                 pass
         # Only treat the 429 as quota exhaustion when MDBList says the key is
-        # actually empty; a 429 with requests still remaining is some other
-        # throttle, and parking the key until midnight for it would be wrong.
+        # actually empty; a 429 with requests still remaining (or none of the
+        # quota headers at all) is the burst throttle, and parking the key
+        # until midnight for it would be wrong.
         reset_at = None
-        if quota and quota.reset_at and (quota.remaining is None or quota.remaining <= 0):
+        if (
+            resp.status_code == 429
+            and quota and quota.reset_at
+            and (quota.remaining is None or quota.remaining <= 0)
+        ):
             reset_at = quota.reset_at
         logger.warning(
-            f"MDblist rate-limited for {media_id} "
-            f"(retry-after={retry_after}, quota={quota})"
+            f"MDblist {'rate-limited' if resp.status_code == 429 else 'refused (503)'} "
+            f"for {media_id} (retry-after={retry_after}, quota={quota})"
         )
         return _RateLimited(retry_after, reset_at=reset_at)
 

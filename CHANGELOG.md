@@ -1,5 +1,124 @@
 # Changelog
 
+## Unreleased
+
+### Landscape in the configurator
+
+- The preview header has a landscape button. It switches the live preview to
+  the 16:9 render, shows the landscape choices under Core → Landscape, and
+  makes Copy config copy the `shape=landscape` URL (the shape is saved with
+  the rest of the settings and round-trips through Import; presets leave it
+  alone).
+- In landscape view the Rating, Logo and Quality tabs are hidden, along with
+  every other control the landscape renderer does not read (vignette levels
+  and top-band toggles, fallback style, sash and notch styling), so nothing
+  on screen can be reported as not working there. Hide Genre and Textless,
+  which it does read, move into the Landscape group meanwhile. The landscape
+  URL carries only the settings that apply; the saved configuration still
+  carries everything, so the portrait settings survive a reload.
+- Landscape has defaults of its own for the settings it shares with portrait:
+  a bare `shape=landscape` URL renders the tinted band (two-tone, saturation
+  2.0, lightness 1.3, blur 1.0, local blending off) with the badge matched to
+  it, the textless art with the logo, the badge top-left and the sash shown.
+  An explicit parameter still wins, and portrait defaults are unchanged. The
+  configurator keeps a separate set of those values per shape, so switching
+  the preview never disturbs the other shape's settings, and its Sash mode
+  reads Hidden | Shown in landscape — there is no diagonal sash or notch
+  there, only the badge.
+- Bottom Colour from Poster can actually be switched off in landscape. The
+  configurator only ever wrote the toggle's on state, so off was an absent
+  parameter — the server's default — and in landscape that default is on.
+  Both vignette colour toggles are now written in both states (and still
+  dropped from the URL when they match the shape's default).
+- Three landscape presets (tinted band, dark band, original art). The preset
+  gallery is grouped by shape with the shape being previewed first, a preset
+  switches the preview to its own shape, and it only touches the controls
+  that shape reads — a landscape preset leaves the portrait configuration
+  alone and vice versa. Import from a config URL follows `shape=landscape`.
+- Added `landscape_badge_scale` (Sash → Badge → Badge Size, 0.6–2.0):
+  scales the landscape info badge's type and padding together, for a shelf
+  watched from across a room.
+- Added `landscape_color_link` (Sash → Badge → Colour Link): the info
+  badge takes the tinted band's colour, or the band takes the whole-frame
+  colour the badge uses. Hue only — the band still darkens it and the badge
+  still lifts it.
+- Landscape renders of anime ids (AniList / Kitsu) drew on the genre canvas:
+  the providers ship one cover and no backdrop. They now use TMDB's backdrops,
+  already fetched for the logo list, when the request carries a `tmdb_id` and
+  a TMDB key is available; the cover remains the portrait art.
+- The landscape band no longer shows a line where it starts. Its alpha ramp
+  was the portrait curve, which begins at full slope; on a short canvas the
+  eye reads that kink as a rule across the art, and no height or strength
+  setting could hide it. The band is now a smoothstep — flat at its top edge
+  and at its peak — with a gamma that gathers the darkness under the text
+  row, so it can be tall enough to fade properly (0.45 h) without reaching
+  visibly into the picture.
+- The logo's height is no longer tied to the band: it used to be capped at
+  the band's top edge, so a shallower band shrank every stacked logo with
+  it. The logo keeps its own 0.30 h ceiling and stands on its drop shadow.
+- Cached landscape composites are re-rendered once (render cache version 7).
+- The landscape logo's drop shadow was blurred on a canvas exactly the logo's
+  size, so it clamped at the edges and came out as a straight-edged slab
+  around any logo whose ink reached its bounding box. It is now built on a
+  padded canvas and reads as a soft pool under the wordmark.
+- The landscape info pill is about 15% larger and casts a soft drop shadow,
+  so it stands off bright art in the top corners the way the logo does; the
+  genre / year / score strip casts a tighter one for the same reason, with
+  the letters punched out of it so the translucent type does not darken,
+  and its ink lifted a step.
+- Landscape prefers a wide logo: within the language bucket that wins, a
+  logo with an aspect ratio of 2.0 or more is ranked ahead of stacked or
+  square ones, which the wide, short logo box could only draw small. Votes
+  still decide among the wide ones, and portrait selection is unchanged.
+- The landscape band's poster-colour tint now honours Blend Into Nearby Art
+  the way the portrait bottom vignette does, and samples at the finer cell
+  counts the wider canvas was meant to use, so the low end of Blur follows
+  the art instead of going coarse.
+
+### Identity
+
+- `/poster` and `/logo` accept either id. An `imdb_id`-only request (or a
+  `tt…` `stremio_id`) is resolved to a TMDB id through TMDB's `/find` and
+  persisted, so it renders exactly as a request carrying both ids would and
+  shares its composite cache entry with one. TMDB's type wins when it
+  disagrees with the request. Missing both ids is a 400 that names both.
+
+### MDBList burst limit
+
+- MDBList throttles per IP as well as per key: a burst of calls within a few
+  seconds gets 503s, then `429` with `Retry-After: 10` for every key on the
+  address, with the daily quota untouched. That 429 was handled as a key
+  problem — the key was cooled down, a sibling key was tried (and refused
+  too), and one without `Retry-After` parked the key for an hour with
+  thousands of calls left. A burst 429 or 503 now pauses all MDBList calls
+  from the process for `Retry-After` (10 s when absent) and touches no key;
+  a live render waits the pause out and retries once, so the poster is
+  complete and cacheable rather than provisional. Quota 429s keep the
+  sleep-until-reset-and-rotate behaviour.
+- Added `MDBLIST_MIN_INTERVAL` (default `0.2` s): a minimum spacing between
+  MDBList request starts shared by live renders and the cache warmer. With
+  `MDBLIST_CONCURRENCY=3` an unpaced cold catalog warm reached ~10 calls/s,
+  which is where the limit was hit. `/stats` and the admin overview show the
+  pacing rate and any burst pause in progress.
+
+### Cinemeta fallback
+
+- Added Stremio's Cinemeta catalogue as a key-less, IMDb-keyed art and
+  metadata source (`CINEMETA_ENABLED`, on by default). An instance with no
+  TMDB key — on the server or the request — renders any title it has an IMDb
+  id for: the Metahub background cropped to portrait with the logo on top,
+  the one-sheet in original-art mode, the background as shot in landscape.
+  Title, year, genre, runtime, status, cast and director come from the same
+  document; MDBList ratings, awards and quality badges are unaffected.
+  Cinemeta's own TMDB id is what resolves an `imdb_id`-only request without
+  a key.
+- The same path carries a title TMDB has no record for when a key is
+  configured, and Metahub art is tried as a last tier before the genre
+  canvas when TMDB knows a title but has no artwork. Art availability is
+  probed on the CDN (Cinemeta names image urls for every title) and cached.
+- A `tmdb_id`-only request without a key is still refused — Cinemeta is
+  IMDb-keyed — with a 400 that says an `imdb_id` would render.
+
 ## v1.2.0 - 2026-09-20
 
 This release is compared with `v1.1.0`.

@@ -1,3 +1,4 @@
+import asyncio
 import time
 import unittest
 
@@ -78,14 +79,16 @@ class MDBListRateLimitTests(unittest.IsolatedAsyncioTestCase):
         main._cfg.SERVER_MDBLIST_KEYS = ["server-key-1", "server-key-2"]
         main._rating_backoff.clear()
         main._mdblist_key_cooldown.clear()
+        main._mdblist_ip_pause_until = 0.0
 
     def tearDown(self):
         main._cfg.SERVER_MDBLIST_KEYS = self.server_keys
         main._rating_backoff.clear()
         main._mdblist_key_cooldown.clear()
+        main._mdblist_ip_pause_until = 0.0
 
-    async def test_query_key_rate_limit_does_not_select_server_fallback(self):
-        result = main._RateLimited(retry_after=60)
+    async def test_query_key_quota_limit_does_not_select_server_fallback(self):
+        result = main._RateLimited(retry_after=60, reset_at=time.time() + 3600)
 
         delay, fallback = main._mark_mdblist_rate_limit(
             "tt11347692", "request-key", result
@@ -94,6 +97,53 @@ class MDBListRateLimitTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(delay, 60)
         self.assertIsNone(fallback)
         self.assertIn("request-key", main._mdblist_key_cooldown)
+
+    # -- burst (per-IP) limit -------------------------------------------------
+
+    async def test_burst_429_pauses_process_not_key(self):
+        """Retry-After with quota left is MDBList's per-IP burst limit: every key
+        on the address is refused, so rotating is pointless and cooling the key
+        down for an hour is wrong."""
+        result = main._RateLimited(retry_after=10)
+
+        delay, fallback = main._mark_mdblist_rate_limit(
+            "tt11347692", "server-key-1", result
+        )
+
+        self.assertEqual(delay, 10)
+        self.assertIsNone(fallback)
+        self.assertNotIn("server-key-1", main._mdblist_key_cooldown)
+        self.assertEqual(main._rating_backoff, {})
+        self.assertAlmostEqual(main._mdblist_ip_pause_remaining(), 10, delta=0.5)
+
+    async def test_burst_429_without_retry_after_pauses_briefly(self):
+        """The contributor's case: a 429 with no Retry-After and 24k calls left
+        used to park the key for 3600 s."""
+        result = main._RateLimited(retry_after=None, reset_at=None)
+
+        delay, _ = main._mark_mdblist_rate_limit("tt11347692", "server-key-1", result)
+
+        self.assertEqual(delay, main._MDBLIST_BURST_PAUSE_DEFAULT)
+        self.assertNotIn("server-key-1", main._mdblist_key_cooldown)
+
+    async def test_burst_pause_is_capped_and_only_extends(self):
+        main._mark_mdblist_rate_limit("tt1", "server-key-1", main._RateLimited(retry_after=9999))
+        self.assertAlmostEqual(main._mdblist_ip_pause_remaining(), main._MDBLIST_BURST_PAUSE_MAX, delta=0.5)
+
+        main._mark_mdblist_rate_limit("tt2", "server-key-2", main._RateLimited(retry_after=5))
+        self.assertAlmostEqual(main._mdblist_ip_pause_remaining(), main._MDBLIST_BURST_PAUSE_MAX, delta=0.5)
+
+    async def test_burst_pause_leaves_sibling_keys_selectable_afterwards(self):
+        main._mark_mdblist_rate_limit("tt1", "server-key-1", main._RateLimited(retry_after=10))
+        main._mdblist_ip_pause_until = 0.0  # pause over
+
+        self.assertEqual(main._next_mdblist_server_key("server-key-1"), "server-key-2")
+        self.assertEqual(
+            main._warm_mdblist_key_with_quota("server-key-1", asyncio.get_running_loop().time(), 0),
+            "server-key-1",
+        )
+
+    # -- quota (per-key) limit ------------------------------------------------
 
     async def test_quota_429_without_retry_after_sleeps_until_reset(self):
         reset_at = time.time() + 5 * 3600
@@ -175,6 +225,27 @@ class MDBListQuotaTrackingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, main._RateLimited)
         self.assertIsNone(result.reset_at)
         self.assertEqual(ratings.mdblist_quota_remaining("key-a"), 412)
+
+    async def test_503_is_a_burst_signal_not_a_network_failure(self):
+        """A run of 503s is how the per-IP burst limit shows itself first; it
+        must not walk the 30s/2m/8m/1h network-failure ladder."""
+        async with self._client(503, {"retry-after": "10"}) as client:
+            result = await ratings.fetch_rating(client, "key-a", [], "movie", media_id="tt0111161")
+
+        self.assertIsInstance(result, main._RateLimited)
+        self.assertEqual(result.retry_after, 10)
+        self.assertFalse(result.quota_exhausted)
+
+    async def test_503_never_counts_as_quota_exhaustion(self):
+        async with self._client(503, {
+            "x-ratelimit-limit": "1000",
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-reset": str(int(time.time()) + 3600),
+        }) as client:
+            result = await ratings.fetch_rating(client, "key-a", [], "movie", media_id="tt0111161")
+
+        self.assertIsInstance(result, main._RateLimited)
+        self.assertFalse(result.quota_exhausted)
 
     async def test_stale_snapshot_is_unknown_after_reset(self):
         async with self._client(200, {
@@ -258,3 +329,51 @@ class CacheWarmKeyFallbackTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MDBListPacingTests(unittest.IsolatedAsyncioTestCase):
+    """_mdblist_wait_for_slot spaces request starts and sits out a burst pause."""
+
+    def setUp(self):
+        self.interval = main._cfg.MDBLIST_MIN_INTERVAL
+        main._mdblist_next_slot = 0.0
+        main._mdblist_ip_pause_until = 0.0
+
+    def tearDown(self):
+        main._cfg.MDBLIST_MIN_INTERVAL = self.interval
+        main._mdblist_next_slot = 0.0
+        main._mdblist_ip_pause_until = 0.0
+
+    async def test_concurrent_callers_are_spaced_by_the_interval(self):
+        main._cfg.MDBLIST_MIN_INTERVAL = 0.05
+        loop = asyncio.get_running_loop()
+        starts: list[float] = []
+
+        async def caller():
+            await main._mdblist_wait_for_slot()
+            starts.append(loop.time())
+
+        await asyncio.gather(*(caller() for _ in range(4)))
+
+        starts.sort()
+        gaps = [b - a for a, b in zip(starts, starts[1:])]
+        self.assertEqual(len(gaps), 3)
+        for gap in gaps:
+            self.assertGreaterEqual(gap, 0.05 - 0.005)
+
+    async def test_zero_interval_is_a_no_op(self):
+        main._cfg.MDBLIST_MIN_INTERVAL = 0.0
+        loop = asyncio.get_running_loop()
+        t0 = loop.time()
+        for _ in range(5):
+            await main._mdblist_wait_for_slot()
+        self.assertLess(loop.time() - t0, 0.02)
+
+    async def test_burst_pause_is_waited_out_before_the_slot(self):
+        main._cfg.MDBLIST_MIN_INTERVAL = 0.0
+        loop = asyncio.get_running_loop()
+        main._mdblist_ip_pause_until = loop.time() + 0.1
+        t0 = loop.time()
+        await main._mdblist_wait_for_slot()
+        self.assertGreaterEqual(loop.time() - t0, 0.1 - 0.005)
+        self.assertEqual(main._mdblist_ip_pause_remaining(), 0.0)

@@ -13,7 +13,7 @@ Layout, all fractions of the canvas:
     |  [badge]                              [badge]    |   top_left / top_right
     |                                                  |
     |                                                  |
-    |......................vignette....................|   band, 0.40 h
+    |......................vignette....................|   band, _BAND_RATIO h
     |  LOGO  (or title)              Genre | Yr | 87   |
     +--------------------------------------------------+
 
@@ -49,9 +49,19 @@ _FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
 # --- Layout constants (fractions of the canvas) ------------------------------
 
-_BAND_RATIO      = 0.40   # bottom vignette height
+# Bottom vignette height.  Was 0.40, the portrait "medium" band; on a frame
+# that is 16:9 the same fraction starts a third of the way up the subjects,
+# and with a strong tint the band's onset read as a wash over the content
+# rather than a base under the text.  The band is a base for the text row,
+# not a box the logo has to fit inside — the logo has its own ceiling
+# (_LOGO_MAX_H) and its own shadow, so it may stand above the band's edge.
+_BAND_RATIO      = 0.45
 _BAND_ALPHA      = 212    # peak alpha at the very bottom row
-_BAND_CURVE      = 1.5    # easing exponent, shared with the portrait band
+# Power applied to the smoothstep (see _band_ramp).  1.0 is the plain S-curve
+# with its midpoint halfway down the band; above it the darkness gathers lower
+# and the top half of the band goes nearly clear.  The top edge stays
+# invisible at any value — that is the point of the curve, not of this knob.
+_BAND_GAMMA      = 1.4
 
 # Absolute cell counts the tint sampler works in.  The portrait defaults (64/24)
 # describe a 500px-wide band; at 1000px each cell would cover twice the content,
@@ -70,15 +80,34 @@ _RIGHT_PAD       = 0.045  # right inset for the info strip
 # part of the only thing put there to support it.  This leaves a ~6% margin
 # below the text, which is about where the ink stops once descenders are drawn.
 _BASELINE        = 0.925
-_BAND_CLEAR      = 0.02   # keep the logo this far inside the band's top edge
 
 _LOGO_MAX_W      = 0.42   # keeps the logo out of the info strip's half
+# Independent of the band on purpose.  It used to be capped at the band's top
+# edge as well, which made the logo a function of the vignette: lowering the
+# band to 0.25 h shrank every height-bound logo to 0.155 h, unreadable on a
+# TV.  A stacked logo now rises above a shallow band on its drop shadow.
 _LOGO_MAX_H      = 0.30
 
+# Logo drop shadow: a diffuse pool rather than a hard offset copy, so a
+# wordmark lifts off a light patch of the band without a second outline.
+_LOGO_SHADOW_ALPHA = 200
+_LOGO_SHADOW_BLUR  = 9.0
+_LOGO_SHADOW_DX    = 2
+_LOGO_SHADOW_DY    = 5
+# The info strip's shadow: tighter than the logo's, because at text size a
+# 9px pool reads as a smudge rather than a lift.
+_INFO_SHADOW_ALPHA = 170
+_INFO_SHADOW_BLUR  = 5.0
+
 _BADGE_TOP       = 0.075
-_BADGE_FONT      = 0.042
-_BADGE_PAD_X     = 22
-_BADGE_PAD_Y     = 11
+_BADGE_FONT      = 0.048  # was 0.042; pill scaled up ~15% with its padding
+_BADGE_PAD_X     = 25
+_BADGE_PAD_Y     = 13
+# Soft drop shadow under the glass pill, the same idea as the logo's: a top
+# corner is bare art, and a light pill on a light sky had nothing to stand off.
+_BADGE_SHADOW_ALPHA = 150
+_BADGE_SHADOW_BLUR  = 0.28   # Gaussian radius as a fraction of pill height
+_BADGE_SHADOW_DY    = 0.14   # downward offset, likewise
 
 _INFO_FONT       = 0.058  # "Genre • Year • Score" strip
 
@@ -94,7 +123,7 @@ _TITLE_FONT_STEP = 0.005
 _TITLE_LINE      = 1.12   # line height as a multiple of font size
 _TITLE_MAX_LINES = 2
 
-_MUTED           = (255, 255, 255, 170)
+_MUTED           = (255, 255, 255, 195)   # was 170; lifted with the shadow
 _SEPARATOR       = (255, 255, 255, 90)
 
 # Black, not a colour of its own.  The panel already carries the poster's hue,
@@ -135,39 +164,91 @@ def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(os.path.join(_FONTS_DIR, name), max(1, size))
 
 
-def _draw_vignette(image: Image.Image, art: Image.Image, cfg) -> None:
+def _band_ramp(band_h: int) -> np.ndarray:
+    """Per-row alpha of the bottom band, top row first.
+
+    The portrait band's ``1 - (1 - t) ** k`` starts at full slope: the first
+    row inside the band is already darker than the row above it by the same
+    step as every row after, and on a short canvas the eye reads that kink as
+    a line ruled across the art — the classic Mach band.  On a 2:3 poster the
+    onset is spread over enough rows to pass; here it is not, and no setting
+    of height or strength hides it, because the kink is in the curve's shape.
+
+    So the band uses a smoothstep instead: zero slope at its top edge, so the
+    art simply starts to deepen with no row to point at, and zero slope at the
+    bottom, where the alpha settles at its peak under the text.  ``_BAND_GAMMA``
+    then gathers the darkness lower without reintroducing the kink — the top
+    stays flat at any power, only the middle moves.
+    """
+    t = np.linspace(0.0, 1.0, band_h, dtype=np.float32)
+    smooth = t * t * (3.0 - 2.0 * t)
+    return (smooth ** _BAND_GAMMA * _BAND_ALPHA).astype(np.uint8)
+
+
+def _draw_vignette(image: Image.Image, art: Image.Image, cfg,
+                   source: tuple[float, float, float] | None = None,
+                   ) -> tuple[float, float, float] | None:
     """Paint the bottom band, tinted from the art when the user asked for it.
 
     ``art`` is the pre-vignette snapshot: sampling ``image`` would just return
     the darkness a previous pass painted.
+
+    ``source`` overrides the band's own colour choice with a colour decided
+    elsewhere (the badge's, under "vignette follows badge").  Returns the tint
+    the band was painted from, or None when it was left plain black, so the
+    badge can follow it the other way round.
     """
     from main import (
-        _vignette_dominant_rgb, _vignette_secondary_rgb, _vignette_tint_band,
+        _vignette_dominant_rgb, _vignette_secondary_rgb, _vignette_hue_profile,
+        _vignette_band_colour, _vignette_seam, _vignette_tint_band,
         _vignette_frost_band, _vignette_level_band, _VIGNETTE_SAT_FULL,
+        _VIGNETTE_MATCH_MIN_CONF,
     )
 
     width, height = image.size
     band_h = max(1, int(height * _BAND_RATIO))
     band_y = height - band_h
 
-    t = np.linspace(0, 1, band_h, dtype=np.float32)
-    eased = ((1 - (1 - t) ** _BAND_CURVE) * _BAND_ALPHA).astype(np.uint8)
     ramp = Image.fromarray(
-        np.broadcast_to(eased[:, np.newaxis], (band_h, width)).copy(), mode="L"
+        np.broadcast_to(_band_ramp(band_h)[:, np.newaxis], (band_h, width)).copy(),
+        mode="L",
     )
 
     box = (0, band_y, width, height)
     tinted = None
+    painted = None
     if cfg.vignette_poster_color_bottom:
-        _strict, tint, conf = _vignette_dominant_rgb(art)
+        if source is not None:
+            # Handed a colour: paint with it outright.  Confidence is the
+            # badge's business, and it has already committed to this hue.
+            tint, conf = tuple(float(c) for c in source), 1.0
+            second = _vignette_secondary_rgb(art, tint) if cfg.vignette_color_ramp else None
+        else:
+            _strict, tint, conf = _vignette_dominant_rgb(art)
+            second = None
+            if tint is not None:
+                second = (
+                    _vignette_secondary_rgb(art, tint)
+                    if cfg.vignette_color_ramp and conf > 0 else None
+                )
+                # The same seam-versus-whole choice the portrait bottom band
+                # makes (see _vignette_band_colour), so "Blend Into Nearby Art"
+                # means the same thing on both shapes.  The band's inner edge
+                # is band_y and it lies below that edge, hence +1.
+                tint, conf, second = _vignette_band_colour(
+                    art, _vignette_seam(width, height, band_y, +1, ramp),
+                    (tint, conf, second, _vignette_hue_profile(art)[3]),
+                    cfg.vignette_color_local, cfg.vignette_color_ramp,
+                )
         if tint is not None:
-            second = (
-                _vignette_secondary_rgb(art, tint)
-                if cfg.vignette_color_ramp and conf > 0 else None
-            )
             # Same derivation the portrait bands use: levelling follows
             # whichever of saturation / blur is asking for more of it.
             slider = min(1.0, max(0.0, cfg.vignette_color_saturation) / _VIGNETTE_SAT_FULL)
+            # Only a colour the band actually shows is one the badge may
+            # follow — the same bar the portrait notch's match uses.  A band
+            # that came out near black, or at saturation 0, is black.
+            if conf >= _VIGNETTE_MATCH_MIN_CONF and slider > 0:
+                painted = tint
             level = max(slider, min(1.0, max(0.0, cfg.vignette_color_blur)))
             _vignette_frost_band(image, box, ramp, cfg.vignette_color_blur)
             _vignette_level_band(image, box, ramp, level)
@@ -175,12 +256,14 @@ def _draw_vignette(image: Image.Image, art: Image.Image, cfg) -> None:
                 art, box, tint, conf,
                 cfg.vignette_color_saturation, cfg.vignette_color_blur,
                 second, cfg.vignette_color_lightness,
+                columns=_TINT_COLUMNS, ramp_columns=_RAMP_COLUMNS,
             ).convert("RGBA")
 
     if tinted is None:
         tinted = Image.new("RGBA", (width, band_h), (0, 0, 0, 0))
     tinted.putalpha(ramp)
     image.paste(tinted, (0, band_y), mask=tinted)
+    return painted
 
 
 def _luma(rgb) -> float:
@@ -211,9 +294,40 @@ def _lift(rgb: tuple[float, float, float], backing: float) -> tuple[int, int, in
     return tuple(round(c * 255) for c in down)
 
 
+def _drop_shadow(image: Image.Image, mask: Image.Image, x: int, y: int,
+                 radius: float, alpha: int) -> None:
+    """Composite a blurred black copy of ``mask`` with its top-left at (x, y).
+
+    The blur spills past the mask's own edges, so the shadow is built on a
+    padded canvas and then clipped to the image — alpha_composite refuses a
+    negative destination, which a pill in the top-left corner would produce.
+    """
+    pad = int(radius * 3) + 1
+    sheet = Image.new("L", (mask.width + 2 * pad, mask.height + 2 * pad), 0)
+    sheet.paste(mask.point(lambda a: a * alpha // 255), (pad, pad))
+    sheet = sheet.filter(ImageFilter.GaussianBlur(radius))
+    sx, sy = x - pad, y - pad
+    left, top = max(0, -sx), max(0, -sy)
+    right  = min(sheet.width,  image.width  - sx)
+    bottom = min(sheet.height, image.height - sy)
+    if right <= left or bottom <= top:
+        return
+    sheet = sheet.crop((left, top, right, bottom))
+    shadow = Image.new("RGBA", sheet.size, (0, 0, 0, 0))
+    shadow.putalpha(sheet)
+    image.alpha_composite(shadow, (sx + left, sy + top))
+
+
 def _glass_pill(image: Image.Image, box: tuple[int, int, int, int],
-                art: Image.Image, cfg) -> tuple[int, int, int]:
+                art: Image.Image, cfg,
+                source: tuple[float, float, float] | None = None,
+                ) -> tuple[int, int, int]:
     """Frosted pill carrying the poster's own colour.  Returns its ink colour.
+
+    ``source`` replaces the colour the pill would sample for itself — the
+    vignette's tint, when the two are linked.  It still goes through the lift,
+    because the lift is what makes the pill legible on whatever it lands on:
+    the link shares the hue, not the vignette's darkness.
 
     Same construction as the portrait frosted notch, and deliberately the same
     helpers: a blurred crop of what the pill sits on, under a tint layer whose
@@ -252,8 +366,8 @@ def _glass_pill(image: Image.Image, box: tuple[int, int, int, int],
         # dominant_frost_rgb's fallback handles the case where those pixels are
         # too dark or too washed to carry a hue, borrowing the frame's instead.
         backing = np.asarray(blurred.convert("RGB"), dtype=np.float32)
-        tint = _lift(dominant_frost_rgb(image.crop(box), fallback=art),
-                     _luma(backing.reshape(-1, 3).mean(axis=0)))
+        base = source if source is not None else dominant_frost_rgb(image.crop(box), fallback=art)
+        tint = _lift(base, _luma(backing.reshape(-1, 3).mean(axis=0)))
         opacity = _LIFT_OPACITY
 
     # Cairo rasterises at ANTIALIAS_BEST; PIL's rounded_rectangle has no
@@ -265,6 +379,11 @@ def _glass_pill(image: Image.Image, box: tuple[int, int, int, int],
     blurred.putalpha(mask)
     frost = Image.new("RGBA", (w, h), (*tint, 0))
     frost.putalpha(mask.point(lambda a: int(a * opacity)))
+    # Shadow goes down after the glass has sampled the art beneath it, so the
+    # frost doesn't blur its own shadow into a darker panel, and before the
+    # pill, which covers the part of it that falls inside the outline.
+    _drop_shadow(image, mask, x0, y0 + int(h * _BADGE_SHADOW_DY),
+                 h * _BADGE_SHADOW_BLUR, _BADGE_SHADOW_ALPHA)
     image.alpha_composite(Image.alpha_composite(blurred, frost), (x0, y0))
 
     if _BORDER:
@@ -282,24 +401,30 @@ def _glass_pill(image: Image.Image, box: tuple[int, int, int, int],
 
 
 def _draw_badge(image: Image.Image, text: str, position: str, art: Image.Image,
-                cfg, logo_height: int = 0, plain: bool = False) -> None:
+                cfg, logo_height: int = 0, plain: bool = False,
+                source: tuple[float, float, float] | None = None) -> None:
     width, height = image.size
     draw = ImageDraw.Draw(image)
+    # User scale on top of the tuned size: a pill legible on a monitor is
+    # not necessarily legible from a sofa.  Padding scales with the type so
+    # the pill keeps its proportions rather than growing a thick rim.
+    scale = max(0.1, float(getattr(cfg, "landscape_badge_scale", 1.0) or 1.0))
 
     if plain:
         # The stacked slot sits inside the band, so the glass would be a second
         # surface doing a job the vignette has already done.  Set at the info
         # strip's size and on its baseline, so the two read as one bottom row
         # rather than as a label that happens to be near some metadata.
-        _plain_font = _font("Inter-Bold.ttf", int(height * _INFO_FONT))
+        _plain_font = _font("Inter-Bold.ttf", int(height * _INFO_FONT * scale))
         draw.text((int(width * _SIDE_PAD), int(height * _BASELINE)), text,
                   font=_plain_font, fill=(255, 255, 255, 242), anchor="ls")
         return
 
-    font = _font("Inter-Bold.ttf", int(height * _BADGE_FONT))
+    font = _font("Inter-Bold.ttf", int(height * _BADGE_FONT * scale))
     tw = draw.textlength(text, font=font)
-    th = int(height * _BADGE_FONT)
-    bw, bh = int(tw + _BADGE_PAD_X * 2), int(th + _BADGE_PAD_Y * 2)
+    th = int(height * _BADGE_FONT * scale)
+    pad_x, pad_y = round(_BADGE_PAD_X * scale), round(_BADGE_PAD_Y * scale)
+    bw, bh = int(tw + pad_x * 2), int(th + pad_y * 2)
 
     if position == "top_right":
         x, y = width - int(width * _RIGHT_PAD) - bw, int(height * _BADGE_TOP)
@@ -314,8 +439,8 @@ def _draw_badge(image: Image.Image, text: str, position: str, art: Image.Image,
     else:  # top_left
         x, y = int(width * _SIDE_PAD), int(height * _BADGE_TOP)
 
-    ink = _glass_pill(image, (x, y, x + bw, y + bh), art, cfg)
-    draw.text((x + _BADGE_PAD_X, y + _BADGE_PAD_Y - 2), text, font=font,
+    ink = _glass_pill(image, (x, y, x + bw, y + bh), art, cfg, source=source)
+    draw.text((x + pad_x, y + pad_y - round(2 * scale)), text, font=font,
               fill=(*ink, 245))
 
 
@@ -330,11 +455,7 @@ def _draw_logo(image: Image.Image, logo: Image.Image) -> int:
     if logo.width <= 0 or logo.height <= 0:
         return 0
 
-    # Height is capped by the ratio AND by the band itself: a tall logo scaled
-    # only by _LOGO_MAX_H can top out above the vignette, leaving its upper half
-    # sitting on bare art with nothing behind it.
-    band_top = height * (1 - _BAND_RATIO) + height * _BAND_CLEAR
-    max_h = min(int(height * _LOGO_MAX_H), int(height * _BASELINE - band_top))
+    max_h = int(height * _LOGO_MAX_H)
     scale = min(int(width * _LOGO_MAX_W) / logo.width, max(1, max_h) / logo.height)
     drawn = logo.resize((max(1, round(logo.width * scale)),
                          max(1, round(logo.height * scale))), Image.Resampling.LANCZOS)
@@ -343,9 +464,12 @@ def _draw_logo(image: Image.Image, logo: Image.Image) -> int:
     y = int(height * _BASELINE) - drawn.height
 
     # Soft drop shadow so a white wordmark survives a light patch in the band.
-    shadow = Image.new("RGBA", drawn.size, (0, 0, 0, 0))
-    shadow.putalpha(drawn.getchannel("A"))
-    image.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(7)), (x + 3, y + 5))
+    # Built on a padded canvas (see _drop_shadow): blurring the logo's own
+    # alpha on a canvas exactly its size clamps at the edges, and wherever the
+    # ink reaches its bounding box the blur smears into a straight-edged slab
+    # — the shadow came out as a box drawn around the logo.
+    _drop_shadow(image, drawn.getchannel("A"), x + _LOGO_SHADOW_DX, y + _LOGO_SHADOW_DY,
+                 _LOGO_SHADOW_BLUR, _LOGO_SHADOW_ALPHA)
     image.alpha_composite(drawn, (x, y))
     return drawn.height
 
@@ -403,8 +527,7 @@ def _draw_title(image: Image.Image, title: str) -> int:
     draw = ImageDraw.Draw(image)
 
     max_w = int(width * _LOGO_MAX_W)
-    band_top = height * (1 - _BAND_RATIO) + height * _BAND_CLEAR
-    max_h = min(int(height * _LOGO_MAX_H), int(height * _BASELINE - band_top))
+    max_h = int(height * _LOGO_MAX_H)
 
     # Largest size that fits, one line preferred over two at every size — a
     # single line beside a logo reads better than a wrapped one a size larger.
@@ -518,15 +641,35 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
     while len(parts) > 1 and total(parts) > limit:
         parts.pop(0)
 
+    # Drawn on a layer of its own so the strip's ink can cast one shadow —
+    # the same pool the logo gets, for the same reason: the band is the
+    # strip's only backing, and on light art it can be thin where the text
+    # sits.  Compositing the layer afterwards keeps the text itself crisp.
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    ldraw = ImageDraw.Draw(layer)
     x = width - int(width * _RIGHT_PAD)
     baseline = int(height * _BASELINE)
     for i, (text, fill) in enumerate(reversed(parts)):
         tw = draw.textlength(text, font=font)
-        draw.text((x - tw, baseline), text, font=font, fill=fill, anchor="ls")
+        ldraw.text((x - tw, baseline), text, font=font, fill=fill, anchor="ls")
         x -= tw
         if i < len(parts) - 1:
             x -= sep_w
-            draw.text((x, baseline), sep, font=font, fill=_SEPARATOR, anchor="ls")
+            ldraw.text((x, baseline), sep, font=font, fill=_SEPARATOR, anchor="ls")
+    ink = layer.getchannel("A")
+    bbox = ink.getbbox()
+    if bbox:
+        # The strip is translucent, so a shadow straight under it shows
+        # through the letters and reads as the text going darker rather than
+        # standing out.  The shadow is built on its own layer and the ink
+        # punched out of it, leaving only the halo around the glyphs.
+        x0, y0, x1, y1 = bbox
+        shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        _drop_shadow(shadow, ink.crop(bbox), x0 + _LOGO_SHADOW_DX, y0 + _LOGO_SHADOW_DY,
+                     _INFO_SHADOW_BLUR, _INFO_SHADOW_ALPHA)
+        shadow.putalpha(ImageChops.multiply(shadow.getchannel("A"), ImageChops.invert(ink)))
+        image.alpha_composite(shadow)
+    image.alpha_composite(layer)
 
 
 def build_landscape(
@@ -548,7 +691,20 @@ def build_landscape(
     image = image.convert("RGBA")
     art = image.copy()          # pre-vignette snapshot for tint sampling
 
-    _draw_vignette(image, art, cfg)
+    # Colour link between the band and the badge.  Left alone, each samples
+    # the art its own way — the band its seam, the pill the patch under it —
+    # and on some art they land a hue apart.  "vignette_follows_badge" gives
+    # both the whole-frame colour the pill was originally specified to use;
+    # "badge_follows_vignette" hands the pill whatever the band chose.  Either
+    # way only the hue is shared: the band still darkens it, the pill still
+    # lifts it.  Nothing to link when the band is plain black.
+    link = getattr(cfg, "landscape_color_link", "off")
+    shared = None
+    if link == "vignette_follows_badge" and cfg.vignette_poster_color_bottom:
+        from awards import dominant_frost_rgb
+        shared = tuple(float(c) for c in dominant_frost_rgb(art))
+    band_tint = _draw_vignette(image, art, cfg, source=shared)
+    badge_source = band_tint if link == "badge_follows_vignette" else shared
 
     # What belongs in the logo slot was decided upstream, where the art actually
     # got picked: a logo, or a title to stand in for one, or neither when the
@@ -582,6 +738,7 @@ def build_landscape(
                         # are bare art, so those keep the glass that makes them
                         # readable.  Keyed on what was drawn, not on the mode
                         # that was asked for, for the same reason as above.
-                        plain=(logo_height == 0 and position == "logo"))
+                        plain=(logo_height == 0 and position == "logo"),
+                        source=badge_source)
 
     return image
