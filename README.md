@@ -629,7 +629,7 @@ To add a language, copy `languages/en.json` to `languages/<code>.json` (e.g. `fr
 
 Region-qualified files (`pt-br.json`) are supported and take precedence over the bare language (`pt.json`) for a `pt-br` request. Note that this differs from how region-qualified **artwork** is selected: a region file wins per *table*, not per *key*, so a `pt-br.json` that ships a partial `sashLabels` map does **not** borrow the missing entries from `pt.json` — they fall through to English. Region files should be full copies of `en.json`, not diffs.
 
-> Note: contributed languages must be **Latin-script**. The bundled font has no CJK/Arabic glyphs and no right-to-left shaping, so those scripts will not render correctly.
+> Note: poster text is drawn in Inter, which covers **Latin, Greek and Cyrillic**. It has no CJK, Arabic, Hebrew, Indic or Thai glyphs, and the image has no complex-text or right-to-left shaping, so those scripts will not render correctly. `tests/test_i18n_sash_vocabulary.py` fails on any character the font cannot draw.
 
 ---
 

@@ -281,6 +281,23 @@
   placeholder in for a title it has no TMDB id for renders from the IMDb id
   instead of getting a malformed-id 400.
 
+### Localization
+
+- Added Polish (`pl`) poster-output translations, contributed by @skoruppa.
+- Added poster-output translations for every configurator language the label
+  font can draw: German, Dutch, Swedish, Danish, Norwegian, Finnish, Greek,
+  Czech, Slovak, Hungarian, Romanian, Croatian, Russian, Ukrainian, Bulgarian,
+  Turkish, Vietnamese, Indonesian, Malay, Swahili and Afrikaans. These are
+  machine-assisted first drafts; corrections from native speakers are welcome.
+  Japanese, Korean, Chinese, Arabic, Persian, Urdu, Hebrew, Hindi, Bengali,
+  Tamil, Telugu and Malayalam stay untranslated: Inter has no glyphs for those
+  scripts, and the image has no complex-text shaping to lay them out.
+- French, Italian and Portuguese gained the 27–29 language-name sash labels
+  they were missing, which previously rendered in English.
+- The landscape badge uppercases its label the way the language does: Turkish
+  `i` becomes `İ` rather than `I`, and Greek drops the tonos in capitals.
+- The configurator marks every fully translated language with ★.
+
 ## v1.2.0 - 2026-09-20
 
 This release is compared with `v1.1.0`.

@@ -43,7 +43,7 @@ import os
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-from i18n import translate_genre, translate_sash
+from i18n import translate_genre, translate_sash, upper_label
 
 _FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
@@ -733,7 +733,7 @@ def build_landscape(
         if sash_result is not None:
             label, _sash_type = sash_result
             position = getattr(cfg, "landscape_badge_pos", "top_left")
-            _draw_badge(image, translate_sash(label, cfg.logo_language).upper(),
+            _draw_badge(image, upper_label(translate_sash(label, cfg.logo_language), cfg.logo_language),
                         position, art, cfg, logo_height=logo_height,
                         # Only a stacked badge with an empty logo slot lands
                         # inside the band.  Stacked over a logo or a title it

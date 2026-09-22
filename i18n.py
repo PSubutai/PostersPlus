@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 
 logger = logging.getLogger(__name__)
 
@@ -146,3 +147,23 @@ def translate_sash(label: str | None, lang: str | None) -> str:
         return _NOM_SEP.join(sl.get(part, part) for part in label.split(_NOM_SEP))
 
     return sl.get(label, label)
+
+
+def upper_label(text: str | None, lang: str | None) -> str:
+    """Uppercase a translated label the way the language itself would.
+
+    str.upper() is locale-blind, which is wrong for two shipped languages:
+    Turkish (and Azerbaijani) dotted i uppercases to İ, not I; and Greek
+    drops the tonos in all-caps ("Ταινία" → "ΤΑΙΝΙΑ", not "ΤΑΙΝΊΑ") while
+    keeping the diaeresis.
+    """
+    if not text:
+        return text or ""
+    base = (_lang_candidates(lang) or [""])[-1]
+    if base in ("tr", "az"):
+        text = text.replace("i", "İ")
+    text = text.upper()
+    if base == "el":
+        text = unicodedata.normalize(
+            "NFC", unicodedata.normalize("NFD", text).replace("́", ""))
+    return text

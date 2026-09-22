@@ -1,9 +1,12 @@
 import json
+import re
 import unittest
 from pathlib import Path
 
+from PIL import ImageFont
+
 from festivals import FESTIVAL_SASH_LABELS
-from i18n import load_languages, translate_sash
+from i18n import load_languages, translate_sash, upper_label
 
 
 LANGUAGE_DIR = Path(__file__).resolve().parents[1] / "languages"
@@ -74,6 +77,58 @@ class FixedSashVocabularyTests(unittest.TestCase):
             with self.subTest(language=path.stem):
                 labels = _load_language(path)["sashLabels"].keys()
                 self.assertFalse(retired & labels, f"{path.name} still lists a retired prize")
+
+
+class FullVocabularyTests(unittest.TestCase):
+    # Every shipped language is a complete copy of en.json: a gap renders as
+    # English mid-poster, and a dropped {placeholder} loses the rank or date.
+    PLACEHOLDER = re.compile(r"\{[a-z]+\}")
+
+    def test_every_translation_carries_the_whole_vocabulary(self):
+        english = _load_language(LANGUAGE_DIR / "en.json")
+        for path in LANGUAGE_DIR.glob("*.json"):
+            with self.subTest(language=path.stem):
+                language = _load_language(path)
+                for table in ("genreLabels", "sashLabels"):
+                    self.assertEqual(language[table].keys(), english[table].keys(),
+                                     f"{path.name} {table} differs from en.json")
+                    for key, value in language[table].items():
+                        self.assertEqual(sorted(self.PLACEHOLDER.findall(value)),
+                                         sorted(self.PLACEHOLDER.findall(english[table][key])),
+                                         f"{path.name} {key!r} changed its placeholders")
+
+    def test_every_translation_renders_in_the_label_font(self):
+        # All poster text is drawn in Inter, which has Latin, Greek and
+        # Cyrillic but no CJK, Arabic, Hebrew, Indic or Thai glyphs — those
+        # would render as boxes.  Upper case is checked too: the landscape
+        # badge uppercases its label.
+        font = ImageFont.truetype(str(LANGUAGE_DIR.parent / "fonts" / "Inter-Bold.ttf"), 40)
+        notdef = bytes(font.getmask("\U0010FFFD"))
+        for path in LANGUAGE_DIR.glob("*.json"):
+            with self.subTest(language=path.stem):
+                language = _load_language(path)
+                text = "".join([*language["genreLabels"].values(),
+                                *language["sashLabels"].values(),
+                                *language["monthsShort"]])
+                chars = set(text) | set(upper_label(text, language["code"]))
+                missing = sorted(c for c in chars
+                                 if ord(c) > 127 and bytes(font.getmask(c)) == notdef)
+                self.assertFalse(missing, f"{path.name} has no glyph for {missing}")
+
+
+class UpperLabelTests(unittest.TestCase):
+    def test_turkish_keeps_the_dot_on_capital_i(self):
+        self.assertEqual(upper_label("İptal edildi", "tr"), "İPTAL EDİLDİ")
+        self.assertEqual(upper_label("Fransızca", "tr-TR"), "FRANSIZCA")
+
+    def test_greek_drops_the_tonos_but_keeps_the_diaeresis(self):
+        self.assertEqual(upper_label("Πρεμιέρα", "el"), "ΠΡΕΜΙΕΡΑ")
+        self.assertEqual(upper_label("Εβραϊκά", "el"), "ΕΒΡΑΪΚΑ")
+
+    def test_other_languages_match_str_upper(self):
+        self.assertEqual(upper_label("Première", "fr"), "PREMIÈRE")
+        self.assertEqual(upper_label("Italiano", None), "ITALIANO")
+        self.assertEqual(upper_label("", "tr"), "")
 
 
 if __name__ == "__main__":
