@@ -721,9 +721,12 @@ def build_landscape(
         # badge stacked above needs something to clear.
         logo_height = _draw_title(image, fallback_title)
 
+    # Hiding the rating is passed as "there is no score": the strip already
+    # drops a missing one along with its separator, which is exactly the result
+    # wanted here, and the same switch reads the same way in either shape.
     _draw_info_strip(image,
                      "" if cfg.hide_genre else (translate_genre(genre, cfg.logo_language) or genre),
-                     release_year, score)
+                     release_year, None if cfg.hide_rating else score)
 
     if cfg.sash_mode != "hidden" and discovery_meta is not None:
         sash_result = pick_sash(discovery_meta, cfg.sash_priority)

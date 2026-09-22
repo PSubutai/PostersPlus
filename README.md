@@ -21,7 +21,7 @@ Those not self-hosting can [visit the public instance.](https://postersplus.elfh
 
 - **Admin dashboard** - every server setting managed from `/admin` with a live status overview, restart button, and per-field provenance (saved / env / default). One env var to unlock it; the rest can leave your compose file for good.
 
-- **Ratings overlay** - weighted composite score from Letterboxd, Trakt, Rotten Tomatoes, IMDb, Metacritic, TMDb, MyAnimeList, AniList, Kitsu, and more. Four display modes (Score Bar, Clean, Minimalist, Bar) with many sub-modes. Minimalist mode includes Year, Rating, Both, and Split layouts with optional centring and independently styled field/rating separators. Three built-in colour palettes plus custom score-to-hex palettes, poster-aware overlays, configurable text and glow colours, and optional glow on high scores.
+- **Ratings overlay** - weighted composite score from Letterboxd, Trakt, Rotten Tomatoes, IMDb, Metacritic, TMDb, MyAnimeList, AniList, Kitsu, and more. Four display modes (Score Bar, Clean, Minimalist, Bar) with many sub-modes. Minimalist mode includes Year, Rating, Both, and Split layouts with optional centring and independently styled field/rating separators. Three built-in colour palettes plus custom score-to-hex palettes, poster-aware overlays, configurable text and glow colours, and optional glow on high scores. Hide Genre and Hide Rating strip either field from the label in every mode.
 
 - **Award sashes** - Oscar Best Picture, Golden Globe (film and TV, five major categories), Emmy Outstanding Series (Drama, Comedy, Limited), festival prizes, notable studios/directors/cast, trending titles, TV lifecycle signals (new season, returning, season finale), premieres, just-added digital movies, cult classics, true stories, and Metacritic Must-See. Priority order is fully configurable and any sash can be disabled. Sashes can also render as a modern filled or frosted notch with independent size, inset, padding, text colour, and artwork-aware tint controls.
 
@@ -259,8 +259,9 @@ Grouped as the admin dashboard groups them. Defaults apply when neither the dash
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANIME_SOURCES_ENABLED` | `true` | Serve art, titles, genres and a community score from AniList and Kitsu when a client passes anilist_id or kitsu_id. No id conversion is performed, so clients that only speak imdb/tmdb are unaffected. Neither provider needs an API key. `true` or `false`. |
-| `ANIME_COMPOSITE_LOGO` | `true` | Composite a title logo over anime cover art. That art rarely carries a logotype (or only a small block of Japanese corner text), so a proper logo is usually an improvement; off serves the provider's art untouched. Logos come from TMDB, Metahub or TVDB, so the request needs a tmdb_id or imdb_id. `true` or `false`. |
+| `ANIME_SOURCES_ENABLED` | `true` | Serve art, titles, genres and a community score from AniList and Kitsu when a client passes an anilist_id or kitsu_id (or a kitsu:/anilist: stremio_id). Clients that only speak imdb/tmdb are unaffected. Neither provider needs an API key. `true` or `false`. |
+| `ANIME_COMPOSITE_LOGO` | `true` | Composite a title logo over anime cover art. That art rarely carries a logotype (or only a small block of Japanese corner text), so a proper logo is usually an improvement; off serves the provider's art untouched. Logos come from TMDB, Metahub or TVDB, so the request needs a tmdb_id or imdb_id, or anime id mapping to supply one. `true` or `false`. |
+| `ANIME_ID_MAP_ENABLED` | `true` | Fill in the TMDB and IMDb ids an anime request didn't send, from the community Kitsu/AniList mapping list (downloaded daily into a local table). Lets a client that only sends a kitsu: or anilist: id get TMDB logos, landscape backdrops and IMDb-keyed ratings; art still comes from the anime provider. `true` or `false`. |
 
 #### Text detection
 
@@ -425,7 +426,7 @@ Either id identifies the title — `tmdb_id`, `imdb_id`, or a `tt…` value in `
 
 Which placeholders a URL may use is a fact about the client that resolves them, not a preference, so the configurator's **Copy config** button picks the shape for you:
 
-There are only two shapes behind the list:
+There are only two shapes of identity behind the list:
 
 | Client | Identity parameters |
 |---|---|
@@ -433,6 +434,8 @@ There are only two shapes behind the list:
 | Bingecat, Discover+ | `tmdb_id={tmdb_id}&type={type}` |
 
 Nuvio's pattern resolver takes AIOMetadata's placeholder set, optional `{name?}` form included, and Xperience builds Nuvio configurations, so all three end up in front of the same resolver and share the optimal URL. Bingecat and Discover+ reject `{name?}` at config time and won't save a URL containing one; as each gains the form it moves onto the optimal URL, and once neither is left every client shares a single one.
+
+Nuvio adds one parameter the others have no equivalent for: `shape={shape}`, which its resolver fills with the shape the catalogue asked for. One URL then covers the portrait slot, the 16:9 slot and the Continue Watching backdrop, where every other client needs the landscape URL copied separately from the landscape view. The placeholder's presence is the switch — without it Nuvio replaces only portrait posters and leaves the other shapes with their own art — so **Copy config** emits it for Nuvio and the landscape choices ride along whichever way the preview is pointing. The settings the configurator keeps per shape travel twice on it — the portrait value under the plain name, the landscape one as `landscape_<name>` — so each layout renders with its own; the URL is the same whichever view you copy it from, and any value a render would pick anyway is left out.
 
 Left-click copies for the client you last chose (the first press opens the menu, since there is nothing to repeat yet); right-click always opens the menu, as does a press-and-hold on touch. The choice is remembered per browser and is not part of the saved configuration, so an imported or shared config URL never carries someone else's client with it.
 
@@ -460,17 +463,20 @@ Pass `shape=landscape` for the dedicated 16:9 renderer:
 https://yourdomain.com/poster?tmdb_id={tmdb_id}&type={type}&shape=landscape
 ```
 
+`shape` also accepts `poster` as a synonym for `portrait`, which is the word Nuvio's `{shape}` placeholder substitutes; an absent, unrecognised or unsubstituted value renders portrait, and all of those spellings share one cached composite. The one value that is refused is `square`: there is no square renderer, and coercing it would push a 2:3 poster into a 1:1 tile, so it answers `400` and Nuvio's fallback keeps the addon's own artwork for those items.
+
 Landscape mode uses backdrop artwork, keeps the top corners clear for client overlays, and combines the genre, year, rating, sash, and age rating into one bottom information band. Typography, spacing, and overlays are sized relative to the canvas height for consistent proportions.
 
-Two optional parameters control the landscape-specific choices:
+Optional parameters control the landscape-specific choices:
 
 - `landscape_art=textless|original` selects a language-neutral backdrop with a composited logo (the default) or the highest-ranked language-tagged backdrop with its own title treatment.
 - `badge_pos=top_left|top_right|logo` places the age badge in a top corner or alongside the composited logo.
 - Landscape defaults differ from portrait for the shared vignette settings: a bare `shape=landscape` URL renders with `vignette_poster_color_bottom=true`, two-tone on, local blending off, saturation 2.0, lightness 1.3, blur 1.0 and `landscape_color_link=badge_follows_vignette`. Pass any of them explicitly to override.
 - `landscape_badge_scale=0.5–2.5` scales the info badge (type and padding together); `1.0` is the tuned size.
 - `landscape_color_link=off|badge_follows_vignette|vignette_follows_badge` links the colour of the info badge and a tinted band (`vignette_poster_color_bottom=true`): the badge takes the band's colour, or the band takes the whole-frame colour the badge uses. Only the hue is shared — the band still darkens it, the badge still lifts it for legibility.
+- `landscape_<name>` sets a landscape-only value for a setting both shapes read: `vignette_poster_color_bottom`, `vignette_color_ramp`, `vignette_color_local`, `vignette_color_saturation`, `vignette_color_lightness`, `vignette_color_blur`, `hide_genre`, `hide_rating`, `textless` and `sash_mode`. A landscape render reads `landscape_<name>`, then `<name>`, then its own default, and a portrait render never reads it — which is what lets one `shape={shape}` URL give each layout different values.
 
-The configurator previews both shapes: the landscape button in the preview header switches the live preview to the 16:9 render, reveals the landscape choices under Core → Landscape (art) and Sash → Badge (position, size, colour link), and makes **Copy config** copy the landscape URL, so a client with a landscape slot can be given the same settings as the portrait one. The landscape URL carries only the settings the landscape renderer reads (identity, language, sash priority and release-status filters, weights, Hide Genre, Textless, and the bottom vignette colour with its sliders); the Rating, Logo and Quality tabs are hidden while it is showing, since nothing on them applies. Your portrait settings are kept — switching back restores them.
+The configurator previews both shapes: the landscape button in the preview header switches the live preview to the 16:9 render, reveals the landscape choices under Core → Landscape (art) and Sash → Badge (position, size, colour link), and makes **Copy config** copy the landscape URL, so a client with a landscape slot can be given the same settings as the portrait one. (Nuvio is the exception — its URL carries `shape={shape}` and is already both, so there is no separate landscape copy to take.) The landscape URL carries only the settings the landscape renderer reads (identity, language, sash priority and release-status filters, weights, Hide Genre, Hide Rating, Textless, and the bottom vignette colour with its sliders); the Rating, Logo and Quality tabs are hidden while it is showing, since nothing on them applies. Your portrait settings are kept — switching back restores them.
 
 Landscape renders deliberately skip stream-quality fetching because this layout does not display quality tokens.
 
@@ -555,7 +561,7 @@ Sashes display contextual metadata about a title - awards, festival recognition,
 | True Story | Based on a true story |
 | Short / Mini / Binge | Short film, miniseries, or bingeable series |
 | Trending (Broad) | Lower-ranked trending titles, rank `TRENDING_FETCH_COUNT`+1–`TRENDING_BROAD_FETCH_COUNT` (default 41–100) |
-| Release Status | Title's current release state: Cinema / Streaming / Physical / Production for movies, Airing / Ended / Cancelled for TV. Lowest default priority; movies require an extra TMDB API call the first time. When TMDB has dated an unreleased movie, the sash shows the date and what it opens instead — `Oct 16 Cinema`, `Oct 23 Streaming`, or `Dec 2027 Cinema` a year or more out (in cinemas: the next digital/disc date; in production: the first release anywhere). `release_status_dates=false` keeps the bare status |
+| Release Status | Title's current release state: Cinema / Streaming / Physical / Production for movies, Airing / Renewed / Ended / Cancelled / Production for TV. Airing means episodes are actually going out (one aired in the last fortnight, or the next is due within one); a show between seasons is Renewed when TMDB lists its next season, and shows no status when nothing is announced. With dates on, a series is dated the same way a movie is: `Dec 25 Premiere` for an unaired show, `Mar 4 Season 3` for a dated next season, `Jan 8 Returns` after a mid-season break. Lowest default priority; movies require an extra TMDB API call the first time. When TMDB has dated an unreleased movie, the sash shows the date and what it opens instead — `Oct 16 Cinema`, `Oct 23 Streaming`, or `Dec 2027 Cinema` a year or more out (in cinemas: the next digital/disc date; in production: the first release anywhere). `release_status_dates=false` keeps the bare status |
 
 Sash priority order is configurable in the web configurator via drag-and-drop. The Primary Client selector sets recommended edge insets: Stremio TV, Nuvio, Plex, and Jellyfin use `0` for both bar and notch; Stremio Desktop/Web use `0.007` for the bar and `0.004` for the notch. Both sliders remain manually adjustable, and loading a preset preserves them. Existing URLs can override the notch with `sash_badge_inset` and the bar with `bar_bottom_inset`. Individual sashes can be disabled entirely with the ✕ button - disabled sashes are serialised as `-slot_name` in the URL (e.g. `&sash_priority=wins,cast,-trending`).
 

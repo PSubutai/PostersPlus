@@ -14,8 +14,11 @@ RELEASE_STATUS_LABELS = {
     "Cinema",
     "Production",
     "Airing",
+    "Renewed",
     "Ended",
     "Cancelled",
+    "Returns",
+    "seasonWindow",
 }
 
 FIXED_SASH_LABELS = RELEASE_STATUS_LABELS | FESTIVAL_SASH_LABELS

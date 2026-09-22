@@ -2,6 +2,117 @@
 
 ## Unreleased
 
+### One Nuvio URL for both shapes
+
+- Nuvio's custom poster pattern gained a `{shape}` placeholder, which its
+  resolver fills with the shape the catalogue asked for. **Copy config** now
+  emits `shape={shape}` for Nuvio, so a single URL covers the portrait slot,
+  the 16:9 slot and the Continue Watching backdrop — where every other client
+  still needs the landscape URL copied separately from the landscape view.
+  The placeholder's presence is the switch on Nuvio's side: without it, it
+  replaces only portrait posters and leaves the other shapes alone.
+- Because that URL is resolved for both layouts, it is not filtered to either:
+  the portrait-only settings ride along and the landscape choices are emitted
+  whichever way the preview is pointing — the URL is the same from either view.
+- The settings the configurator keeps per shape — the bottom vignette tint and
+  its sliders, Hide Genre, Hide Rating, Textless and the sash mode — now also
+  take a `landscape_`-prefixed parameter (`landscape_hide_rating`,
+  `landscape_vignette_poster_color_bottom`, …) that only a landscape render
+  reads. A dual URL carries both values, so each layout gets its own: with one
+  parameter between them, the portrait value would have reached the 16:9 slot
+  too, and a URL copied with the portrait defaults would have rendered
+  landscape without its tinted band. A landscape render reads the prefixed
+  parameter, then the plain one, then its own default, so `shape=landscape`
+  URLs written before the split render unchanged. The configurator writes the
+  prefixed form for landscape URLs, leaves out any value a render would pick
+  anyway, and imports a dual URL into both shapes' settings.
+- `shape` accepts `poster` as a synonym for `portrait` — Nuvio's word for the
+  2:3 slot. It already rendered correctly, because an unrecognised shape fell
+  through to the portrait default, but the spelling reached the composite
+  cache key: `poster`, `portrait`, an unsubstituted `{shape}` and no shape at
+  all were four cache entries for one render, and are now one.
+- `shape=square` answers `400` instead. Nuvio asks for it when an addon
+  declares `posterShape: "square"` on a catalogue item, and there is no square
+  renderer to answer with — a portrait poster squashed into a 1:1 tile is
+  worse than not answering, and the error hands the item back to Nuvio's
+  fallback, which restores the addon's own artwork.
+
+### Series release status and dates
+
+- A series' release status came from TMDB's status word alone, and TMDB's
+  "Returning Series" means "not declared finished", not "on air" — so The Last
+  of Us (last episode May 2025) and Severance (March 2025) both read **Airing**.
+  The status now comes from the episode data TMDB already sends with the
+  series, at no extra API call: **Airing** only while episodes are going out
+  (one in the last fortnight, or the next due within one); **Renewed** when
+  TMDB lists the next season; and no status at all for a show returning in
+  name only, so a lower sash gets the space instead of a claim.
+- With release dates on, a series is dated the way a movie is: `Dec 25
+  Premiere` for a show that hasn't aired, `Mar 4 Season 3` for a dated next
+  season, `Jan 8 Returns` after a mid-season break. The weekly next-episode
+  date is left off on purpose — it would change every week and crowd out
+  better sashes. Translated in every shipped language; where the window comes
+  before the day the season uses the short form (`T3 4 mar`), so the two
+  numbers don't run together.
+- New **Renewed** sash slot, last in the default order so saved sash orders
+  keep their positions. A saved list that names Airing gets Renewed right
+  behind it (add `-renewed` to leave it out), since those shows used to read
+  Airing.
+
+### A leak post no longer outranks an announced digital date
+
+- The Odyssey (2026) showed "Streaming" while still in cinemas. Its IMDb id
+  had been posted to r/movieleaks in August — a knock-off film posted under
+  Nolan's id — and the digital-release cache takes every IMDb id in every post
+  at face value, overriding TMDB's status. TMDB meanwhile listed the digital
+  release for November. The feed is there to catch releases that beat TMDB's
+  date, and real ones beat it by days, so a leak now counts unless TMDB
+  schedules the digital release more than 14 days out — for both the
+  release-status sash and the "New" sash. With no TMDB date to compare (no
+  key, or the lookup failed) it is trusted as before. Composites already
+  cached with the wrong status re-render when their row expires (at most 30
+  days, sooner if the title's next release date comes first).
+
+### Anime from clients that only send the anime id
+
+- Anime landscape posters requested through Nuvio's own `{shape}` URL came
+  back as the genre canvas, where the same titles through AIOMetadata (as the
+  Nuvio HTPC fork uses) rendered properly. The difference was the ids: Nuvio's
+  resolver turns a `kitsu:7442` catalogue item into a Kitsu id and nothing
+  else, while AIOMetadata sends `tmdb_id` and `imdb_id` alongside it. The anime
+  providers ship one cover image and no backdrop or logo, so without a TMDB id
+  the landscape render had nothing to draw on, and portrait anime went without
+  a logo too.
+- New `ANIME_ID_MAP_ENABLED` (on by default) fills in the TMDB and IMDb ids an
+  anime request didn't send, from Fribb's community Kitsu/AniList mapping — the
+  same data AIOMetadata resolves from — downloaded daily into a local table. A
+  Kitsu-only request now renders the same poster, byte for byte, as the
+  AIOMetadata request for the title. Ids the client did send are kept, the TMDB
+  id is only used when it is the kind being rendered (movie or series), and
+  the art and metadata still come from the anime provider. A sequel season
+  maps to its parent show, as it does in AIOMetadata, so its logo and backdrop
+  are the show's.
+
+### Hide Rating
+
+- **Rating → Labels → Hide Rating** (`hide_rating=true`) takes the score off
+  the poster in whichever display mode is drawing it, alongside the existing
+  Hide Genre. Every mode loses its own representation of it: the Rating Bar
+  mode's accent bar, Clean's `★ 87`, Minimalist's score segment, and Bar
+  mode's `★ 87` along with the fill in the two Rating Bar styles, which fall
+  back to plain Frosted and Pure Black rather than drawing an empty stripe.
+- A score shown as a colour is still a score, so those go too. Minimalist's
+  Year layout carries the rating in the separator between the genre and the
+  year; with the rating hidden that separator drops back to the text colour,
+  and — having nothing left to encode — it is drawn even for a title with no
+  score, where before the slot was left empty.
+- The controls that only style a score go with it: the Glow group, the Colour
+  Palette, the out-of-10 switches, Minimalist's Rating Separator and Bar
+  mode's Rating Bar Colour. The Bar mode Style you picked is kept while they
+  are hidden, so turning Hide Rating back off gives the Rating Bar back. Like
+  Hide Genre the switch is kept per shape, and in landscape
+  (`landscape_hide_rating`) it drops the score from the 16:9 info strip.
+
 ### Landscape in the configurator
 
 - The preview header has a landscape button. It switches the live preview to
@@ -12,8 +123,8 @@
 - In landscape view the Rating, Logo and Quality tabs are hidden, along with
   every other control the landscape renderer does not read (vignette levels
   and top-band toggles, fallback style, sash and notch styling), so nothing
-  on screen can be reported as not working there. Hide Genre and Textless,
-  which it does read, move into the Landscape group meanwhile. The landscape
+  on screen can be reported as not working there. Hide Genre, Hide Rating
+  and Textless, which it does read, move into the Landscape group meanwhile. The landscape
   URL carries only the settings that apply; the saved configuration still
   carries everything, so the portrait settings survive a reload.
 - Landscape has defaults of its own for the settings it shares with portrait:

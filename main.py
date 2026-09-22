@@ -707,15 +707,18 @@ from cache import (
 )
 from digital_release import digital_release_poll_loop
 import imdb_dataset
+import anime_ids
 import watchlist
 import admin as _admin
 from imdb_dataset import imdb_dataset_refresh_loop
 import config as _cfg
 from discovery import (
     ALL_PRIORITY_SLOTS,
+    RELEASE_STATUS_SLOTS,
     DiscoveryMeta,
     extract_discovery_meta,
     pick_sash,
+    tv_release_facts,
 )
 from quality import (
     QUALITY_PENDING,
@@ -854,6 +857,47 @@ def _normalise_optional_id(raw: str | None, name: str) -> str:
     if value in ("{" + name + "}", "{" + name + "?}"):
         return ""
     return value
+
+
+# What Nuvio's "{shape}" placeholder substitutes, mapped onto our two layouts.
+# Its resolver fills the placeholder from the shape the catalogue asked for —
+# "poster", "landscape" or "square" — so a client that sends shape={shape} is
+# asking in its own vocabulary, not ours.  "poster" already rendered correctly
+# by accident (an unrecognised value fell through to the portrait default);
+# naming it here makes that deliberate and, more usefully, lets the composite
+# cache key collapse it onto the same entry as a URL with no shape at all.
+_SHAPE_ALIASES = {
+    "portrait":  "portrait",
+    "poster":    "portrait",   # Nuvio's word for the 2:3 slot
+    "landscape": "landscape",
+}
+
+
+def _normalise_shape(raw: str | None) -> str:
+    """Canonicalise the ``shape`` parameter, or raise for one we cannot render.
+
+    ``square`` is the one value that has to be refused rather than coerced.
+    Nuvio only asks for it when a Stremio addon declares ``posterShape:
+    "square"`` on a catalogue item, and only once the pattern contains
+    ``{shape}`` — without the placeholder it leaves those items alone. We have
+    no square renderer, so coercing it would push a 2:3 poster into a 1:1 tile
+    and squash it. An error instead hands the item back to Nuvio's fallback
+    interceptor, which restores the addon's own square art: the shapes we do
+    serve are replaced, the one we don't is left as it was.
+
+    Everything else stays lenient and lands on portrait, including an
+    unsubstituted "{shape}" from a build that does not know the placeholder —
+    same reading as _normalise_optional_id gives a literal id.
+    """
+    value = (raw or "").strip().lower()
+    if not value or value in ("{shape}", "{shape?}"):
+        return "portrait"
+    if value == "square":
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported shape: PostersPlus renders portrait and landscape, not square.",
+        )
+    return _SHAPE_ALIASES.get(value, "portrait")
 
 
 def _canonical_rating_id(imdb_id: str, anime_key: str, tmdb_id: str) -> str:
@@ -1371,6 +1415,12 @@ class RequestConfig:
     bottom_gradient_opacity: float | None = None
     bottom_gradient_height: float | None = None
     hide_genre: bool = False
+    # Drops every representation of the score from the label, in whichever
+    # rating mode is drawing it — the printed number, the accent bar, the
+    # score-coloured separator and the bar's rating fill alike.  A cue that
+    # encodes the rating as a colour is still the rating, so "hidden" has to
+    # mean all of them or the switch would only half work.
+    hide_rating: bool = False
     # --- Landscape (16:9) rendering -------------------------------------
     # "portrait" (default, unchanged) | "landscape".  Landscape is a separate
     # renderer, not a variant of the portrait layout — see landscape.py.
@@ -1441,6 +1491,42 @@ _LANDSCAPE_DEFAULTS: dict[str, object] = {
 def _apply_landscape_defaults(cfg: "RequestConfig") -> None:
     for name, value in _LANDSCAPE_DEFAULTS.items():
         setattr(cfg, name, value)
+
+
+# Settings both renderers read but the configurator keeps a value for per
+# shape.  Each also answers to a "landscape_"-prefixed parameter that only a
+# landscape render reads, so one URL can carry both values: Nuvio's "{shape}"
+# placeholder resolves a single URL to either layout, and with one parameter
+# between them the portrait value would land on the 16:9 slot too (or the
+# landscape one on the 2:3) — the tinted band being the visible casualty.
+#
+# A landscape render reads landscape_<name>, then <name>, then its own default.
+# The middle step is what keeps shape=landscape URLs written before the split
+# rendering as they did; a dual URL that wants the landscape default back
+# under a portrait value has to say so with the prefixed parameter.
+_LANDSCAPE_SPLIT_PARAMS: tuple[str, ...] = (
+    "vignette_poster_color_bottom",
+    "vignette_color_ramp",
+    "vignette_color_local",
+    "vignette_color_saturation",
+    "vignette_color_lightness",
+    "vignette_color_blur",
+    "hide_genre",
+    "hide_rating",
+    "textless",
+    "sash_mode",
+)
+
+
+def _landscape_view(params: dict) -> dict:
+    """*params* as a landscape render reads them: each landscape_<name> in
+    _LANDSCAPE_SPLIT_PARAMS stands in for <name>."""
+    overrides = {
+        name: params[f"landscape_{name}"]
+        for name in _LANDSCAPE_SPLIT_PARAMS
+        if f"landscape_{name}" in params
+    }
+    return {**params, **overrides} if overrides else params
 
 
 def _parse_bool(val: str | None, default: bool) -> bool:
@@ -1569,8 +1655,16 @@ def _parse_sash_priority(raw: str | None) -> list[str]:
         
     if "release_status" in active:
         idx = active.index("release_status")
-        expanded = [s for s in ["cinema", "streaming", "physical", "production", "ended", "cancelled", "airing"] if s not in excluded and s not in active]
+        expanded = [s for s in RELEASE_STATUS_SLOTS if s not in excluded and s not in active]
         active = active[:idx] + expanded + active[idx+1:]
+
+    # "Renewed" was split out of "Airing" — a show between seasons used to read
+    # Airing — so a list that asked for Airing gets it right behind, unless it
+    # says otherwise.  Without this, every saved explicit list would quietly
+    # lose the sash on those shows.
+    if "airing" in active and "renewed" not in active and "renewed" not in excluded:
+        idx = active.index("airing")
+        active = active[:idx + 1] + ["renewed"] + active[idx + 1:]
         
     # An empty, exclusion-free selection means no real sash config was supplied,
     # so fall back to the full default set. Otherwise the explicit selection is
@@ -1595,9 +1689,11 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg = RequestConfig()
     # Landscape has its own defaults for a few shared settings (see
     # _apply_landscape_defaults); they seed the config before the params are
-    # read, so an explicit parameter still wins.
-    if (params.get("shape") or "").strip().lower() == "landscape":
+    # read, so an explicit parameter still wins.  The landscape_-prefixed
+    # overrides are folded in here too, so everything below parses one name.
+    if _normalise_shape(params.get("shape")) == "landscape":
         _apply_landscape_defaults(cfg)
+        params = _landscape_view(params)
 
     # Client profiles provide defaults only; explicit inset parameters below
     # remain authoritative for users who fine-tune either edge manually.
@@ -1689,10 +1785,9 @@ def build_request_config(params: dict) -> RequestConfig:
         try: cfg.bottom_gradient_height = float(val_bgh)
         except ValueError: pass
     cfg.hide_genre = _b("hide_genre", cfg.hide_genre)
+    cfg.hide_rating = _b("hide_rating", cfg.hide_rating)
 
-    _shape = (params.get("shape") or "").strip().lower()
-    if _shape in ("portrait", "landscape"):
-        cfg.shape = _shape
+    cfg.shape = _normalise_shape(params.get("shape"))
     _ls_art = (params.get("landscape_art") or "").strip().lower()
     if _ls_art in ("textless", "original"):
         cfg.landscape_art = _ls_art
@@ -3364,7 +3459,13 @@ def build_poster(
     # vignette drew from the same sample above; reuse it rather than re-quantising.
     _notch_frosted = _sash_shown and cfg.sash_mode == "notch" and cfg.sash_badge_style == "frosted"
     _sash_poster   = _sash_shown and cfg.sash_mode == "sash" and cfg.sash_poster_color
-    _bar_frosted   = cfg.rating_display_mode == 4 and cfg.bar_style in ("frosted", "rating_frosted")
+    # The two "Rating Bar" styles draw the score as a progress fill, which is a
+    # rating cue like any other — so with the rating hidden each falls back to
+    # the plain body it is built on rather than drawing an empty 0% stripe.
+    _bar_style = cfg.bar_style
+    if cfg.hide_rating:
+        _bar_style = {"rating_frosted": "frosted", "rating_black": "pure_black"}.get(_bar_style, _bar_style)
+    _bar_frosted   = cfg.rating_display_mode == 4 and _bar_style in ("frosted", "rating_frosted")
     _frost_tint: tuple[float, float, float] | None = (
         (_strict_tint if _strict_tint is not None else dominant_frost_rgb(_frost_color_src))
         if (_bar_frosted or _notch_frosted or _sash_poster) else None
@@ -3438,22 +3539,26 @@ def build_poster(
                 font=font_meta,
                 fill=(*cfg.rating_text_color, 255) if cfg.rating_text_color else (200, 200, 200, 255),
             )
-            if cfg.score_glow_color == "match":
-                _glow_color = "match"
-            elif len(cfg.score_glow_color) == 6:
-                _glow_color = tuple(int(cfg.score_glow_color[i:i+2], 16) for i in (0, 2, 4))
-            else:
-                _glow_color = None
-            draw_score_bar(
-                image, score,
-                bottom_margin=int(height * cfg.accent_bar_bottom_ratio),
-                glow_threshold=cfg.score_glow_threshold,
-                glow_blur=cfg.score_glow_blur,
-                glow_alpha=cfg.score_glow_alpha,
-                glow_color=_glow_color,
-                color_mode=cfg.score_color_mode,
-                custom_palette=cfg.score_custom_palette,
-            )
+            # The accent bar IS the rating in this mode — there is no number to
+            # drop, so hiding the rating means not drawing the bar at all, and
+            # the label above it is left to stand on its own.
+            if not cfg.hide_rating:
+                if cfg.score_glow_color == "match":
+                    _glow_color = "match"
+                elif len(cfg.score_glow_color) == 6:
+                    _glow_color = tuple(int(cfg.score_glow_color[i:i+2], 16) for i in (0, 2, 4))
+                else:
+                    _glow_color = None
+                draw_score_bar(
+                    image, score,
+                    bottom_margin=int(height * cfg.accent_bar_bottom_ratio),
+                    glow_threshold=cfg.score_glow_threshold,
+                    glow_blur=cfg.score_glow_blur,
+                    glow_alpha=cfg.score_glow_alpha,
+                    glow_color=_glow_color,
+                    color_mode=cfg.score_color_mode,
+                    custom_palette=cfg.score_custom_palette,
+                )
 
         elif cfg.rating_display_mode == 2:
             font_size = int(width * cfg.numeric_score_font_size_ratio)
@@ -3466,7 +3571,15 @@ def build_poster(
                 _score_text = "10" if score >= 100 else f"{score / 10:.1f}"
             else:
                 _score_text = str(score)
-            label = f"{genre_label} ★ {_score_text}" if genre_label else f"★ {_score_text}"
+            # The whole label is the score and its star here, so hiding the
+            # rating leaves the genre alone — and nothing at all when the genre
+            # is hidden too, which is a valid way to ask for a bare poster.
+            if cfg.hide_rating:
+                label = genre_label
+            elif genre_label:
+                label = f"{genre_label} ★ {_score_text}"
+            else:
+                label = f"★ {_score_text}"
             rating_cy = height * cfg.numeric_score_y_offset
 
             try:
@@ -3474,13 +3587,14 @@ def build_poster(
             except IOError:
                 font_meta = ImageFont.load_default()
 
-            tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
-            draw.text(
-                (tx, ty - int(font_size * 0.10)),
-                label,
-                font=font_meta,
-                fill=(*cfg.rating_text_color, 255) if cfg.rating_text_color else (200, 200, 200, 255),
-            )
+            if label:
+                tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
+                draw.text(
+                    (tx, ty - int(font_size * 0.10)),
+                    label,
+                    font=font_meta,
+                    fill=(*cfg.rating_text_color, 255) if cfg.rating_text_color else (200, 200, 200, 255),
+                )
 
         elif cfg.rating_display_mode == 3:
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
@@ -3513,7 +3627,10 @@ def build_poster(
             #   opposite margin, where it needs nothing to say what it is — a
             #   separator earns its place between things that would otherwise
             #   run together, and nothing runs together across a poster's width.
-            _has_score = score not in ("N/A", None)
+            # Hiding the rating reads exactly like having no score: every
+            # layout below already knows how to close up around a missing one,
+            # so there is nothing mode-specific to do beyond saying so.
+            _has_score = score not in ("N/A", None) and not cfg.hide_rating
             # Score formatting matches the other modes: out of 100 by default,
             # one decimal out of 10 ("8.7"), with a bare "10" at the top.
             if _has_score and cfg.minimalist_score_out_of_10:
@@ -3524,7 +3641,12 @@ def build_poster(
             left_parts: list[tuple[str, str | None]] = []
             if cfg.minimalist_append_mode == 0:
                 if release_year:
-                    parts.append((str(release_year), "rfield" if parts else None))
+                    # Year mode carries the score in the separator's colour, so
+                    # that slot has to drop back to a plain field separator when
+                    # the rating is hidden — otherwise the one cue this layout
+                    # shows the score with would survive the switch.
+                    parts.append((str(release_year),
+                                  None if not parts else "field" if cfg.hide_rating else "rfield"))
             elif cfg.minimalist_append_mode == 1:
                 if _has_score:
                     parts.append((_score_str, "rating" if parts else None))
@@ -3643,7 +3765,7 @@ def build_poster(
         elif cfg.rating_display_mode == 4:
             # Frosted bar — centred dot-separated label at the bottom.
             # Format: Year · Genre · ★ Rating  (omit any missing field)
-            _has_score = score not in ("N/A", None)
+            _has_score = score not in ("N/A", None) and not cfg.hide_rating
             if _has_score:
                 if cfg.bar_score_out_of_10:
                     _score_str = "10" if int(score) >= 100 else f"{int(score) / 10:.1f}"
@@ -3674,8 +3796,8 @@ def build_poster(
                 frost_saturation = _frost_sat,
                 frost_reference  = _frost_ref,
                 bottom_inset     = cfg.bar_bottom_inset,
-                style            = cfg.bar_style,
-                score            = score if score not in ("N/A", None) else None,
+                style            = _bar_style,
+                score            = score if _has_score else None,
                 fill_color       = (
                     None  # "sample" → let draw_frosted_bar derive from bar tint
                     if cfg.bar_accent == "sample" else
@@ -3688,7 +3810,7 @@ def build_poster(
                         )[0]
                         if score not in ("N/A", None) else (210, 210, 218)
                     )
-                ) if cfg.bar_style in ("rating_black", "rating_frosted") else None,
+                ) if _bar_style in ("rating_black", "rating_frosted") else None,
                 tint_rgb         = _frost_tint,
                 text_color       = cfg.rating_text_color,
             )
@@ -4413,6 +4535,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Cache initialised (composite TTL {_cfg.COMPOSITE_CACHE_TTL}s / "
                 f"{_cfg.COMPOSITE_CACHE_TTL / 86400:.1f}d)")
     imdb_dataset.init_db()
+    anime_ids.init_db()
     if imdb_dataset.is_enabled():
         logger.info(
             f"IMDb local dataset enabled (refresh every {_cfg.IMDB_DATASET_REFRESH_HOURS}h, "
@@ -4509,6 +4632,7 @@ async def lifespan(app: FastAPI):
     cache_warm_task = asyncio.create_task(_cache_warm_loop(_digital_release_ready))
     trending_task = asyncio.create_task(_trending_fetch_loop())
     imdb_dataset_task = asyncio.create_task(imdb_dataset_refresh_loop(_HTTP_CLIENT))
+    anime_ids_task = asyncio.create_task(anime_ids.anime_id_map_refresh_loop(_HTTP_CLIENT))
     watchlist_task = asyncio.create_task(
         watchlist.watchlist_refresh_loop(_HTTP_CLIENT, _on_watchlist_change)
     )
@@ -4518,6 +4642,7 @@ async def lifespan(app: FastAPI):
     cache_warm_task.cancel()
     trending_task.cancel()
     imdb_dataset_task.cancel()
+    anime_ids_task.cancel()
     watchlist_task.cancel()
     if _background_detection_task is not None:
         _background_detection_task.cancel()
@@ -4533,6 +4658,8 @@ async def lifespan(app: FastAPI):
         await trending_task
     with suppress(asyncio.CancelledError):
         await imdb_dataset_task
+    with suppress(asyncio.CancelledError):
+        await anime_ids_task
     if _background_detection_task is not None:
         with suppress(asyncio.CancelledError):
             await _background_detection_task
@@ -4739,6 +4866,8 @@ async def server_caps(access_key: str = ""):
         "param_defaults":        _render_param_defaults(),
         "param_defaults_landscape": _render_param_defaults("landscape"),
         "never_omitted_params":  sorted(_NEVER_OMITTED_PARAMS),
+        # Which settings also take a landscape_-prefixed per-shape value.
+        "landscape_split_params": list(_LANDSCAPE_SPLIT_PARAMS),
         "sash_priority_default": list(_cfg.SASH_PRIORITY),
         "sash_priority_diff_seed": _SASH_DIFF_SEED,
         "imdb_dataset_enabled":  imdb_dataset.is_enabled(),
@@ -4769,6 +4898,12 @@ _configurator_etag: str | None = None
 #      logo no longer capped by the band, wide logos preferred — so every
 #      landscape composite cached before it is the old layout.
 _RENDER_CACHE_VERSION = "7"
+
+# How far ahead of TMDB's scheduled digital date an r/movieleaks post is still
+# believed (see _leak_confirmed in get_poster).  Genuine early releases beat the
+# published date by days; a post further ahead than this is far likelier a fake
+# or a telesync than a web release.
+_LEAK_LEAD_DAYS = 14
 _render_assets_signature = "startup"
 
 
@@ -4899,6 +5034,7 @@ async def _build_stats() -> dict:
         # silently stale dataset refresh is otherwise invisible outside the
         # container logs.
         "imdb_dataset": imdb_dataset.status(),
+        "anime_id_map": anime_ids.status(),
         "watchlist": watchlist.status(),
         "trending": {
             "fetch_time":     _cfg.TRENDING_FETCH_TIME or None,
@@ -5444,6 +5580,9 @@ async def get_poster(
         raise HTTPException(status_code=403, detail="Unauthorized, your access key is not valid for this instance.")
 
     _check_type(type)
+    # Refused here rather than inside build_request_config so a square request
+    # costs nothing: it is answered before any id resolution or metadata fetch.
+    shape = _normalise_shape(shape)
 
     # Done before anything reads imdb_id — the composite cache key is built from
     # it further down, and a literal "{imdb_id?}" baked into cache keys would
@@ -5501,6 +5640,19 @@ async def get_poster(
     use_cinemeta = False
 
     if is_anime:
+        # A client that resolves its own pattern from the catalogue item's meta
+        # id can only send the anime id — Nuvio's turns "kitsu:7442" into a
+        # kitsu_id and nothing else — where AIOMetadata sends tmdb_id and
+        # imdb_id alongside it. Without them there is no logo, no landscape
+        # backdrop (the providers ship neither) and no IMDb/TMDB enrichment,
+        # so fill in whatever the community mapping has. Only ever fills a
+        # gap: an id the client did send is kept, as it is the client's own
+        # answer for this item.
+        if not tmdb_id or not imdb_id:
+            _mapped = anime_ids.lookup(anime_namespace, anime_id, type)
+            if _mapped is not None:
+                tmdb_id = tmdb_id or _mapped.tmdb_id or ""
+                imdb_id = imdb_id or _mapped.imdb_id or ""
         # Both are optional on this path, but must still be well-formed if sent.
         if imdb_id:
             _check_imdb_id(imdb_id)
@@ -5614,8 +5766,15 @@ async def get_poster(
             "mal_id", "anidb_id",
             "mdblist_key", "tmdb_key", "type",
             "quality", "season", "episode", "access_key", "debug", "nocache",
+            # Replaced below by the canonical value, for the same reason the
+            # ids above are normalised first: "poster", "portrait", a literal
+            # "{shape}" and no shape at all are one render, and left raw they
+            # would be four composite cache entries of it.
+            "shape",
         )
     }
+    if shape != "portrait":
+        raw_params["shape"] = shape
     rcfg = build_request_config(raw_params)
 
     # Anime is essentially always Japanese, so the foreign-language slot says
@@ -7011,8 +7170,33 @@ async def get_poster(
         # /release_dates helper only when the Just Added sash is enabled.
         # ------------------------------------------------------------------
         _release_status: str | None = None
+        _tv_upcoming_date: str | None = None
+        _tv_upcoming_window: str | None = None
         _recent_digital_release_date: str | None = None
-        _rs_slots = {"release_status", "cinema", "streaming", "physical", "production", "ended", "cancelled", "airing"}
+        _rs_slots = {"release_status", *RELEASE_STATUS_SLOTS}
+        # An r/movieleaks post is evidence a film is out digitally, but it is
+        # anyone's post: every IMDb id in every post is taken at face value, so
+        # a fake or a mislabelled telesync lands in the cache like a real
+        # WEB-DL.  The feed exists to catch releases that beat TMDB's published
+        # digital date, and a real one beats it by days — a film gone to PVOD
+        # early before TMDB's date is updated, or out in the first region.  A
+        # post months ahead of a date the studio has announced is not that:
+        # The Odyssey picked one up in August, a knock-off posted under
+        # Nolan's IMDb id, against a November digital date, and a film still
+        # in cinemas read "Streaming".  So a leak counts unless TMDB schedules
+        # the digital release more than _LEAK_LEAD_DAYS out.  Read from the
+        # cached release row the status comes from — so this is called after
+        # that lookup, not before it — and with no row (no key, or the lookup
+        # failed) the leak is trusted as before.
+        def _leak_confirmed() -> bool:
+            if not (effective_imdb_id and is_digital_release(effective_imdb_id)):
+                return False
+            if type in ("tv", "series") or not has_tmdb_id:
+                return True
+            _scheduled_digital = _parse_tmdb_date(
+                (get_cached_movie_release_info(f"movie_{tmdb_id}") or {}).get("digital_date"))
+            return (_scheduled_digital is None
+                    or (_scheduled_digital - datetime.now().date()).days <= _LEAK_LEAD_DAYS)
         if any(s in rcfg.sash_priority for s in _rs_slots):
             # Resolved for every title regardless of age.  There used to be an
             # age gate here that skipped the lookup for anything older than a
@@ -7031,6 +7215,15 @@ async def get_poster(
                     client, tmdb_id, effective_tmdb_key, type,
                     tmdb_data.get("tmdb_status"),
                 )
+                # fetch_release_status maps the series status word alone, and
+                # "Returning Series" is not "on air" — see tv_release_facts.
+                # The episode data in hand says which it is.  Only when a status
+                # came with the metadata: without one the cached mapping is all
+                # there is to go on.
+                if type in ("tv", "series") and tmdb_data.get("tmdb_status"):
+                    _release_status, _tv_upcoming_date, _tv_upcoming_window = (
+                        tv_release_facts(tmdb_data.get("tmdb_status"), tmdb_data)
+                    )
             elif use_cinemeta and tmdb_data.get("cinemeta_theatrical_date"):
                 # No key, so no /release_dates: Cinemeta's theatrical and disc
                 # dates stand in, through the same rule TMDB's dates go
@@ -7065,9 +7258,7 @@ async def get_poster(
             # r/movieleaks confirmation overrides TMDB's theatrical/production
             # status — if the film is in the digital-release cache it's already
             # streaming regardless of what the official release dates say.
-            if (_release_status in ("Cinema", "Production")
-                    and effective_imdb_id
-                    and is_digital_release(effective_imdb_id)):
+            if _release_status in ("Cinema", "Production") and _leak_confirmed():
                 _release_status = "Streaming"
             # Cinema-only mode: keep the badge purely as an "unavailable" marker —
             # show only Cinema / Production and drop the rest so the slot is
@@ -7082,6 +7273,11 @@ async def get_poster(
         # status came from, so this is not a second TMDB call.
         _upcoming_release_date: str | None = None
         _upcoming_release_window: str | None = None
+        if (rcfg.release_status_dates and type in ("tv", "series")
+                and _release_status in ("Production", "Renewed", "Airing")):
+            # Worked out with the status, from the same episode data — no call.
+            _upcoming_release_date = _tv_upcoming_date
+            _upcoming_release_window = _tv_upcoming_window
         if (rcfg.release_status_dates
                 and _release_status in ("Cinema", "Production")
                 and type not in ("tv", "series")
@@ -7118,9 +7314,7 @@ async def get_poster(
             is_cult_override=is_cult,
             is_true_story_override=is_true_story,
             is_metacritic_override=is_metacritic,
-            is_digital_release_override=bool(
-                effective_imdb_id and is_digital_release(effective_imdb_id)
-            ),
+            is_digital_release_override=_leak_confirmed(),
             release_status_override=_release_status,
             upcoming_release_date=_upcoming_release_date,
             upcoming_release_window=_upcoming_release_window,

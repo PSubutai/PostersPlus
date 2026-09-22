@@ -319,7 +319,15 @@ _SASH_TYPES: dict[str, str] = {
     "production":      "alert",
     "ended":           "alert",
     "cancelled":       "alert",
+    "airing":          "alert",
+    "renewed":         "alert",
 }
+
+# One slot per release status, named after it.  "release_status" in a sash
+# priority expands to all of them.
+RELEASE_STATUS_SLOTS: tuple[str, ...] = (
+    "cinema", "streaming", "physical", "production", "ended", "cancelled", "airing", "renewed",
+)
 
 NEW_RELEASE_DAYS = 14
 TV_RETURNING_LOOKAHEAD_DAYS = 14
@@ -383,6 +391,118 @@ def release_date_label(
     if (rd - today).days >= 365:
         return f"{month} {rd.year} {window}"
     return f"{month} {rd.day} {window}"
+
+
+def season_window(season: int) -> str:
+    """The *window* half of a series release label for a season premiere."""
+    return "Premiere" if season <= 1 else f"Season {season}"
+
+
+def tv_release_facts(
+    tmdb_status: str | None,
+    tmdb_data: dict,
+    *,
+    today: date | None = None,
+) -> "tuple[str | None, str | None, str | None]":
+    """``(status, upcoming_date, window)`` for a series, from facts already in hand.
+
+    TMDB's "Returning Series" means "not declared finished", not "on air": it
+    covers a show airing this week and one whose last episode was two years ago
+    with nothing announced.  Mapped straight to "Airing", most of TMDB's
+    catalogue claimed to be on air.  The episode data TMDB ships with the
+    series details (``next_episode_to_air``, ``last_episode_to_air`` and the
+    season list) says which it is, at no extra API call:
+
+    * **Airing** — an episode aired within TV_RECENT_EPISODE_DAYS, or the next
+      one is due within TV_RETURNING_LOOKAHEAD_DAYS and continues the season.
+      A mid-season break further out than that is still Airing, dated with the
+      episode it resumes on ("Jan 8 Returns").
+    * **Renewed** — the next season is known: either its first episode is
+      scheduled ("Mar 4 Season 3") or TMDB lists the season undated.
+    * nothing — returning in name only: no recent episode and nothing
+      announced.  The slot is skipped and a lower sash gets the space, which
+      is more honest than any status this could print.
+
+    Unaired shows ("In Production" / "Planned" / "Pilot") are Production,
+    dated with their premiere when TMDB has one ("Dec 25 Premiere").  Ended
+    and Cancelled pass through.  A series with no episode data at all — the
+    anime providers ship none — keeps the plain mapping, since there is
+    nothing to refine it with.
+
+    *window* is None whenever *upcoming_date* is; the pair feeds
+    release_date_label, which also drops a date that has already passed.
+    """
+    today = today or date.today()
+    status = (tmdb_status or "").strip()
+    if status in ("Ended",):
+        return "Ended", None, None
+    if status in ("Cancelled", "Canceled"):
+        return "Cancelled", None, None
+
+    next_ep = tmdb_data.get("next_episode") or None
+    last_ep = tmdb_data.get("last_episode") or None
+    seasons = tmdb_data.get("seasons") or []
+
+    def _future(value: str | None) -> date | None:
+        d = _parse_date(value)
+        return d if d is not None and d > today else None
+
+    if status in ("In Production", "Planned", "Pilot"):
+        candidates = [d for d in (
+            _future(_episode_date(next_ep)),
+            _future(tmdb_data.get("tmdb_release_date")),
+            *(_future(s.get("air_date")) for s in seasons if _season_number(s) == 1),
+        ) if d is not None]
+        if candidates:
+            return "Production", min(candidates).isoformat(), "Premiere"
+        return "Production", None, None
+
+    if status != "Returning Series":
+        return None, None, None
+    if next_ep is None and last_ep is None and not seasons:
+        return "Airing", None, None
+
+    last_date = _parse_date(_episode_date(last_ep))
+    next_date = _parse_date(_episode_date(next_ep))
+    last_season = _episode_season(last_ep) or 0
+    recent = last_date is not None and 0 <= (today - last_date).days <= TV_RECENT_EPISODE_DAYS
+
+    if next_date is not None and next_date >= today:
+        next_season = _episode_season(next_ep) or last_season
+        opens_season = next_season > last_season or _episode_number(next_ep) == 1
+        if opens_season:
+            if recent:
+                # A season ends and the next starts inside the same fortnight —
+                # it has not stopped airing.
+                return "Airing", None, None
+            return "Renewed", next_date.isoformat(), season_window(next_season)
+        if recent or (next_date - today).days <= TV_RETURNING_LOOKAHEAD_DAYS:
+            return "Airing", None, None
+        return "Airing", next_date.isoformat(), "Returns"
+
+    if recent:
+        return "Airing", None, None
+
+    # Nothing scheduled.  A season TMDB lists beyond the last one aired is an
+    # announced renewal — dated if TMDB has the date, "Renewed" if not.
+    later = sorted(
+        (n, s.get("air_date")) for s in seasons
+        if (n := _season_number(s)) is not None and n > last_season
+    )
+    if later:
+        n, air = later[0]
+        air_date = _future(air)
+        if air_date is not None:
+            return "Renewed", air_date.isoformat(), season_window(n)
+        return "Renewed", None, None
+    return None, None, None
+
+
+def _season_number(season: dict) -> int | None:
+    try:
+        return int(season.get("season_number"))
+    except (TypeError, ValueError):
+        return None
 
 
 def _episode_date(ep: dict | None) -> str | None:
@@ -814,7 +934,7 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
     if slot == "release_status":
         return _release_status_label(meta)
 
-    if slot in ("cinema", "streaming", "physical", "production", "ended", "cancelled", "airing"):
+    if slot in RELEASE_STATUS_SLOTS:
         if meta.release_status and meta.release_status.lower() == slot:
             return _release_status_label(meta)
         return None
@@ -823,13 +943,20 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
 
 
 def _release_status_label(meta: DiscoveryMeta) -> str | None:
-    """The status as a display string — or, for an unreleased movie whose next
-    date TMDB has published, that date and what it opens ("Oct 16 Cinema")."""
-    if meta.release_status in ("Cinema", "Production"):
+    """The status as a display string — or, when the title's next move has a
+    published date, that date and what it opens: "Oct 16 Cinema" for a movie,
+    "Dec 25 Premiere" / "Mar 4 Season 3" / "Jan 8 Returns" for a series.
+    Checked here as well as upstream: a date beside a status that has already
+    arrived (Streaming, Ended, ...) would read as a promise it isn't."""
+    if meta.release_status in _DATED_STATUSES:
         label = release_date_label(meta.upcoming_release_date, meta.upcoming_release_window)
         if label:
             return label
     return meta.release_status
+
+
+# The statuses that are waiting on a next date — the only ones that can wear one.
+_DATED_STATUSES = frozenset({"Cinema", "Production", "Renewed", "Airing"})
 
 
 # ---------------------------------------------------------------------------
@@ -873,6 +1000,7 @@ ALL_PRIORITY_SLOTS: list[str] = [
     "ended",
     "cancelled",
     "airing",
+    "renewed",
 ]
 
 

@@ -1609,6 +1609,8 @@ _RELEASE_STATUS_TTL_DAYS = {
     # TV that is still running: episode-level facts move faster than film status.
     "Airing":      3,
     "Returning":   3,
+    # Between seasons with the next one announced; its date can land any day.
+    "Renewed":     3,
 }
 _RELEASE_STATUS_TTL_FALLBACK_DAYS = 7
 # Longest a row may sleep on the strength of a published future date.  TMDB

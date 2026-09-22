@@ -34,8 +34,9 @@ _NOM_SEP = " • "
 # and the month name comes from the top-level "monthsShort" list (twelve
 # entries, January first).
 _RELEASE_DATE_RE = re.compile(
-    r"^([A-Z][a-z]{2}) (\d{1,2}|\d{4}) (Cinema|Streaming|Physical)$"
+    r"^([A-Z][a-z]{2}) (\d{1,2}|\d{4}) (Cinema|Streaming|Physical|Premiere|Returns|Season \d+)$"
 )
+_SEASON_WINDOW_RE = re.compile(r"^Season (\d+)$")
 _MONTHS_EN = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -93,7 +94,15 @@ def _translate_release_date(match: "re.Match[str]", sl: dict, lang: str | None) 
     if month_en not in _MONTHS_EN:
         return match.group(0)
     month = _months_short(lang)[_MONTHS_EN.index(month_en)]
-    window = sl.get(window_en, window_en)
+    season = _SEASON_WINDOW_RE.match(window_en)
+    if season:
+        # A template rather than a word: most locales put the window before
+        # the day, and "Temporada 3 4 mar" runs two numbers together, so
+        # they use the short form their TV apps do ("T3 4 mar").
+        tmpl = sl.get("seasonWindow")
+        window = tmpl.replace("{n}", season.group(1)) if tmpl else window_en
+    else:
+        window = sl.get(window_en, window_en)
     if len(rest) == 4:
         tmpl = sl.get("releaseMonth")
         return (tmpl.replace("{month}", month).replace("{year}", rest).replace("{window}", window)
