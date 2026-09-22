@@ -170,7 +170,10 @@ class KeyChangeCompositeTests(unittest.TestCase):
         # Adding an MDBList key later must re-render, not serve N/A for a TTL.
         src = open("main.py", encoding="utf-8").read()
         self.assertIn('_mdb_sig = "|mdb=0" if (not effective_mdblist_key and not is_anime) else ""', src)
-        self.assertIn("+ _spine_sig\n                + _mdb_sig", src)
+        self.assertIn("+ _spine_sig\n                + _mdb_sig\n                + _tmdb_sig", src)
+        # Anime keeps its provider spine without a TMDB key, so the key's
+        # absence (no TMDB logos) has to be in the composite key on its own.
+        self.assertIn('_tmdb_sig = "|tmdb=0" if (not effective_tmdb_key and is_anime) else ""', src)
         # And the Cinemeta spine is keyed apart from the TMDB one already.
         self.assertIn('_spine_sig = "|art=cinemeta" if use_cinemeta else ""', src)
 

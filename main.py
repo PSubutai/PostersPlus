@@ -5694,6 +5694,13 @@ async def get_poster(
         # absent, so every keyed entry keeps its key.  Anime is exempt: its
         # score comes from the provider, key or no key.
         _mdb_sig = "|mdb=0" if (not effective_mdblist_key and not is_anime) else ""
+        # Likewise for a TMDB key on the anime path.  An ordinary title without
+        # a key is a Cinemeta-spined render and carries |art=cinemeta already,
+        # but an anime title keeps its provider spine either way — the key only
+        # decides whether TMDB's logo list (and backdrops, in landscape) come
+        # with it.  Without this, anime composites rendered with the text
+        # title would outlive the key being added.
+        _tmdb_sig = "|tmdb=0" if (not effective_tmdb_key and is_anime) else ""
         _params_hash = hashlib.sha256(
             (
                 "&".join(f"{k}={v}" for k, v in sorted(raw_params.items()))
@@ -5704,6 +5711,7 @@ async def get_poster(
                 + _server_sig
                 + _spine_sig
                 + _mdb_sig
+                + _tmdb_sig
             ).encode()
         ).hexdigest()[:16]
         # The anime key has to be part of this: the same imdb/tmdb pair renders
