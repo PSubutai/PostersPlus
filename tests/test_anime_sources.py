@@ -1,3 +1,4 @@
+import re
 import unittest
 
 import anime
@@ -292,74 +293,92 @@ if __name__ == "__main__":
     unittest.main()
 
 
+def _shape_of(html: str, template_id: str) -> str:
+    """Which COPY_SHAPE_* constant one client's COPY_TEMPLATES entry spreads."""
+    entry = html[html.index(f"{{ id: '{template_id}',") :]
+    return re.search(r"\.\.\.(COPY_SHAPE_\w+)", entry).group(1)
+
+
 class ConfiguratorAnimeIdTests(unittest.TestCase):
-    """The copy/paste template is the only way these ids reach the server, so
-    the placeholder wiring is worth pinning down."""
+    """The copy template is the only way these ids reach the server, so the
+    placeholder wiring is worth pinning down."""
 
     @classmethod
     def setUpClass(cls):
         from pathlib import Path
+
         cls.html = Path("configurator.html").read_text(encoding="utf-8")
 
-    def test_anime_ids_are_opt_in_and_off_by_default(self):
-        # The optional "{name?}" syntax is not universally accepted — Bingecat
-        # rejects it at config time and won't save the URL at all. Only
-        # AIOMetadata passes anime ids, so this must not be on by default.
-        self.assertIn('id="tog-anime-ids"', self.html)
-        self.assertNotRegex(self.html, r'id="tog-anime-ids"[^>]*\bchecked\b')
-
-    def test_hint_names_the_only_supported_addon(self):
-        # Inline hints became row tooltips in the redesign, so the warning now
-        # rides on the toggle's own data-tip rather than its label. Anchored to
-        # the label so it can't pass on some unrelated row's tooltip: enabling
-        # this on a non-AIOMetadata addon is what breaks the URL.
+    def test_anime_ids_follow_the_client_not_a_toggle(self):
+        # There is no Anime IDs switch any more: whether a client can resolve
+        # kitsu:/anilist: ids is a fact about the client, so it rides on the
+        # copy template instead of on something the user has to reason about.
+        self.assertNotIn('id="tog-anime-ids"', self.html)
         self.assertRegex(
             self.html,
-            r'data-tip="[^"]*AIOMetadata only[^"]*"[^>]*>Anime IDs<',
+            r"if \(template\.animeIds\)\s*params\.set\('stremio_id'",
         )
+
+    def test_the_clients_that_reject_optional_syntax_send_no_anime_ids(self):
+        # Bingecat and Discover+ won't save a URL containing "{name?}" at all,
+        # so their template is tmdb_id alone — no anime ids, no optional
+        # imdb_id.
+        for client in ("bingecat", "discoverplus"):
+            with self.subTest(client=client):
+                self.assertEqual(_shape_of(self.html, client), "COPY_SHAPE_REQUIRED")
+        self.assertIn("const COPY_SHAPE_REQUIRED = { tmdbOptional: false, "
+                      "imdbOptional: false, animeIds: false };", self.html)
+
+    def test_the_clients_that_resolve_them_send_them(self):
+        # Xperience builds Nuvio configurations, so its patterns reach the same
+        # resolver and it takes the same shape.
+        for client in ("aiometadata", "nuvio", "xperience"):
+            with self.subTest(client=client):
+                self.assertEqual(_shape_of(self.html, client), "COPY_SHAPE_OPTIMAL")
+        self.assertIn("const COPY_SHAPE_OPTIMAL  = { tmdbOptional: true,  "
+                      "imdbOptional: true,  animeIds: true  };", self.html)
 
     def test_placeholders_are_template_only(self):
         # Emitted under usePlaceholders, so the live preview (which renders one
-        # concrete TMDB title) never carries an unsubstitutable placeholder.
+        # concrete title picked from search) never carries an unsubstitutable
+        # placeholder.
         self.assertRegex(
             self.html,
-            r"if \(usePlaceholders && c\('tog-anime-ids'\)\) \{\s*params\.set\('stremio_id'",
+            r"if \(usePlaceholders\) \{\s*"
+            r"if \(template\.imdbOptional\) params\.set\('imdb_id',\s*'\{imdb_id\?\}'\);\s*"
+            r"if \(template\.animeIds\)\s+params\.set\('stremio_id', '\{id\}'\);",
         )
 
-    def test_import_round_trips_the_toggle(self):
-        # Legacy per-namespace params still re-arm it, so a URL generated before
-        # stremio_id existed round-trips too.
-        self.assertIn(
-            "if (p.has('stremio_id') || p.has('anilist_id') || p.has('kitsu_id')) "
-            "_setEl('tog-anime-ids', 'true');",
-            self.html,
-        )
-
-    def test_core_ids_never_use_the_optional_placeholder_form(self):
-        # REGRESSION GUARD. Older AIOMetadata builds don't understand "{name?}"
-        # and leave it in the URL verbatim; a literal placeholder where the core
-        # id belongs fails validation server-side and 400s the poster. This
-        # shipped once and broke every freshly generated URL.
-        for bad in ("{tmdb_id?}", "{imdb_id?}"):
-            with self.subTest(placeholder=bad):
-                self.assertNotIn(bad, self.html)
+    def test_the_core_id_is_optional_only_where_the_client_takes_it(self):
+        # The optional form is now right for tmdb_id too: either id renders on
+        # its own, and a REQUIRED placeholder the client can't fill nulls the
+        # whole URL. Older builds that leave "{tmdb_id?}" verbatim are read as
+        # "no TMDB id" server-side (main._normalise_optional_id), not as a
+        # malformed one — which is what made the required form load-bearing
+        # before. A client that rejects "{name?}" still gets the required form.
+        self.assertIn("template.tmdbOptional ? '{tmdb_id?}' : '{tmdb_id}'", self.html)
+        for client in ("bingecat", "discoverplus"):
+            with self.subTest(client=client):
+                self.assertEqual(_shape_of(self.html, client), "COPY_SHAPE_REQUIRED")
+        for client in ("aiometadata", "nuvio", "xperience"):
+            with self.subTest(client=client):
+                self.assertEqual(_shape_of(self.html, client), "COPY_SHAPE_OPTIMAL")
 
     def test_anime_ids_ride_on_the_raw_stremio_id(self):
-        # "{id}" is plain, present in every AIOMetadata version, and always
-        # populated, so it can never null the URL and never needs the optional
-        # form that Bingecat rejects and some builds mishandle.
+        # "{id}" is plain, present in every build, and always populated, so it
+        # can never null the URL and never needs the optional form.
         self.assertIn("params.set('stremio_id', '{id}')", self.html)
 
-    def test_no_optional_syntax_anywhere(self):
-        # REGRESSION GUARD. The "{name?}" syntax broke Bingecat outright and was
-        # reported failing on AIOMetadata builds that nominally support it.
-        for bad in ("{tmdb_id?}", "{imdb_id?}", "{kitsu_id?}", "{anilist_id?}"):
+    def test_per_namespace_anime_placeholders_are_never_emitted(self):
+        # They are empty for every live-action title, so they would have to be
+        # optional — and "{id}" already carries them with no such cost.
+        for bad in ("{kitsu_id?}", "{anilist_id?}", "{kitsu_id}", "{anilist_id}"):
             with self.subTest(placeholder=bad):
                 self.assertNotIn(f"'{bad}'", self.html)
 
     def test_question_mark_survives_url_encoding(self):
         # URLSearchParams encodes "?" as %3F; the pattern only matches if it
-        # reaches AIOMetadata literally. Anchored to the closing brace so real
+        # reaches the client literally. Anchored to the closing brace so real
         # values containing "?" aren't corrupted.
         self.assertIn(r".replace(/%3F\}/g, '?}')", self.html)
 

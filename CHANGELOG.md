@@ -75,6 +75,37 @@
   counts the wider canvas was meant to use, so the low end of Blur follows
   the art instead of going coarse.
 
+### Copy config picks your client
+
+- **Copy config** copies the URL in the shape your client can actually
+  resolve. The first press opens a short menu — AIOMetadata, Nuvio, Xperience,
+  Bingecat or Discover+ — and after that a left-click copies for that client
+  again while a right-click reopens the menu to pick another (press and hold on
+  touch, which has no right-click). The choice is remembered per browser,
+  marked with a tick in the menu, and named in the button's tooltip along with
+  where to paste the result.
+- AIOMetadata, Nuvio and Xperience get both core ids in the optional form —
+  `tmdb_id={tmdb_id?}&imdb_id={imdb_id?}`. A *required* placeholder the client
+  cannot fill makes the resolver drop the whole URL, and both ids hit that in
+  practice: TMDB has no IMDb link for some titles, and a client's catalogue
+  often has no TMDB id for one. Since either id renders on its own now, an
+  unresolved one is simply not sent instead of costing the poster. This also
+  brings the IMDb-keyed extras (Metahub logo fallback, digital-release
+  detection, automatic quality badges) straight from the template.
+- That is one URL for three of the five clients: Nuvio's resolver takes
+  AIOMetadata's placeholder set and Xperience builds Nuvio configurations, so
+  all three share it. Bingecat and Discover+ reject `{name?}` at config time
+  and keep `tmdb_id={tmdb_id}` in the required form — correct there, since it
+  is the only id they send and a title they cannot resolve one for has nothing
+  to render from anyway. As each gains the form it moves onto the optimal URL,
+  and once neither is left every client shares a single one.
+- The **Anime IDs** toggle is gone. Whether `stremio_id={id}` can be resolved
+  is a fact about the client rather than a preference, so it now rides on the
+  template: on for the clients that can substitute it, off for the ones that
+  cannot. Existing URLs are unaffected, and the client choice is not
+  part of the saved configuration, so a shared or imported config URL never
+  carries someone else's client with it.
+
 ### Identity
 
 - `/poster` and `/logo` accept either id. An `imdb_id`-only request (or a

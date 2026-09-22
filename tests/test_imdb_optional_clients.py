@@ -1,16 +1,24 @@
-"""The clients that generate /poster URLs must not require an IMDb id either.
+"""The clients that generate /poster URLs must not require an IMDb id.
 
-A required "{imdb_id}" placeholder is worse than a missing rating: AIOMetadata
+A required "{imdb_id}" placeholder is worse than a missing rating: the resolver
 drops the entire URL when a required placeholder resolves to null, so a title
-with no IMDb link lost its poster altogether.
+with no IMDb link lost its poster altogether. The optional "{imdb_id?}" form is
+fine, but only for the clients that implement it — see COPY_TEMPLATES.
 """
 
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+import re
 import unittest
 
 import jellyfin_sync
 import plex_sync
+
+
+def _shape_of(html: str, template_id: str) -> str:
+    """Which COPY_SHAPE_* constant one client's COPY_TEMPLATES entry spreads."""
+    entry = html[html.index(f"{{ id: '{template_id}',") :]
+    return re.search(r"\.\.\.(COPY_SHAPE_\w+)", entry).group(1)
 
 
 class ConfiguratorTemplateTests(unittest.TestCase):
@@ -25,16 +33,38 @@ class ConfiguratorTemplateTests(unittest.TestCase):
         self.assertNotIn("imdb_id=%7Bimdb_id%7D", self.html)
         self.assertNotIn("'{imdb_id}'", self.html)
 
-    def test_the_optional_form_is_not_used_either(self):
-        # Bingecat rejects "{name?}" at config time and some AIOMetadata builds
-        # pass it through verbatim, so it is not a safe substitute.
-        self.assertNotIn("{imdb_id?}", self.html)
+    def test_the_optional_form_is_reserved_for_the_clients_that_take_it(self):
+        # "{imdb_id?}" is how an IMDb id can ride along without ever nulling a
+        # URL, but Bingecat and Discover+ reject "{name?}" at config time and
+        # will not save the URL at all, so only the templates that set
+        # imdbOptional get it.
+        self.assertIn("if (template.imdbOptional) params.set('imdb_id',", self.html)
+        # And nowhere else: one occurrence, inside that branch.
+        self.assertEqual(self.html.count("'{imdb_id?}'"), 1)
+        for client in ("aiometadata", "nuvio", "xperience"):
+            with self.subTest(client=client):
+                self.assertEqual(_shape_of(self.html, client), "COPY_SHAPE_OPTIMAL")
+        for client in ("bingecat", "discoverplus"):
+            with self.subTest(client=client):
+                self.assertEqual(_shape_of(self.html, client), "COPY_SHAPE_REQUIRED")
 
     def test_tmdb_id_remains_the_template_identity(self):
-        # The template always carries {tmdb_id}; a concrete preview url sends
-        # the id when it has one and the IMDb id alone otherwise.
-        self.assertIn("usePlaceholders ? '{tmdb_id}'  : resolvedTmdbId", self.html)
+        # Every template carries tmdb_id — optional where the client can take
+        # that form, required where it can't. A concrete preview url sends the
+        # id when it has one and the IMDb id alone otherwise.
+        self.assertIn("template.tmdbOptional ? '{tmdb_id?}' : '{tmdb_id}'", self.html)
+        self.assertIn(": resolvedTmdbId;", self.html)
         self.assertIn("if (tmdbId) params.set('tmdb_id', tmdbId);", self.html)
+
+    def test_neither_core_id_is_required_on_a_client_that_takes_the_form(self):
+        # Same rule for both: a required placeholder with no value nulls the
+        # whole URL, and PostersPlus renders from either id alone, so neither
+        # is worth a lost poster.
+        self.assertIn("const COPY_SHAPE_OPTIMAL  = { tmdbOptional: true,  "
+                      "imdbOptional: true,  animeIds: true  };", self.html)
+        for client in ("aiometadata", "nuvio", "xperience"):
+            with self.subTest(client=client):
+                self.assertEqual(_shape_of(self.html, client), "COPY_SHAPE_OPTIMAL")
 
     def test_imdb_id_is_only_sent_when_resolved(self):
         self.assertIn("if (imdbId) params.set('imdb_id', imdbId);", self.html)

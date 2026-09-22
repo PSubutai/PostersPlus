@@ -110,7 +110,7 @@ docker compose up -d
 
 Open `http://your-host:8000/admin`, enter the admin key, add your TMDB and MDBList keys under **API keys**, save, and use the **Restart now** button. Every other option in this README's [settings reference](#settings-reference) is there too, grouped and explained in place.
 
-Once your reverse proxy is set up, open the configurator at your public HTTPS domain to tune your poster style and generate a URL template for AIOMetadata. The URL it generates is based on the domain you access it from.
+Once your reverse proxy is set up, open the configurator at your public HTTPS domain to tune your poster style and generate a URL template for your client. **Copy config** asks which client the URL is for the first time you press it, then copies that shape on every left-click after — right-click it to pick a different one. The URL it generates is based on the domain you access it from.
 
 ### Building from source
 
@@ -419,7 +419,26 @@ Posters are served at `/poster` with parameters controlling every aspect of rend
 https://yourdomain.com/poster?tmdb_id={tmdb_id}&type={type}
 ```
 
-Either id identifies the title — `tmdb_id`, `imdb_id`, or a `tt…` value in `stremio_id` — and sending both is best. `tmdb_id` selects the artwork and the metadata directly. An `imdb_id` on its own is resolved to a TMDB id first (TMDB's `/find`, persisted so it costs one call per title ever), and the request then renders exactly as if the client had sent both; if TMDB says the IMDb id is a series rather than a movie, TMDB's type wins. `imdb_id` alongside `tmdb_id` is optional enrichment — send it if your client has one reliably (the Plex and Jellyfin sync scripts do) and it keys the rating cache by IMDb id, sharing that row with every other client. Don't put `{imdb_id}` in an AIOMetadata template: TMDB has no IMDb link for some titles, and a required placeholder with no value makes the resolver discard the entire URL, so those titles get no poster at all. Use `{tmdb_id}` and `stremio_id={id}` there instead.
+Either id identifies the title — `tmdb_id`, `imdb_id`, or a `tt…` value in `stremio_id` — and sending both is best. `tmdb_id` selects the artwork and the metadata directly. An `imdb_id` on its own is resolved to a TMDB id first (TMDB's `/find`, persisted so it costs one call per title ever), and the request then renders exactly as if the client had sent both; if TMDB says the IMDb id is a series rather than a movie, TMDB's type wins. `imdb_id` alongside `tmdb_id` is optional enrichment — send it if your client has one reliably (the Plex and Jellyfin sync scripts do) and it keys the rating cache by IMDb id, sharing that row with every other client. Neither id should be *required* in a template. A required placeholder with no value makes the resolver discard the entire URL, so the title gets no poster at all — and both ids hit that: TMDB has no IMDb link for some titles, and a client's catalogue often has no TMDB id for one (Nuvio's frequently doesn't). Since either id renders on its own, the optional `{name?}` form is the right one for both on the clients that implement it: an id that resolves to empty is simply not sent. The configurator emits exactly that for those clients.
+
+#### Client templates
+
+Which placeholders a URL may use is a fact about the client that resolves them, not a preference, so the configurator's **Copy config** button picks the shape for you:
+
+There are only two shapes behind the list:
+
+| Client | Identity parameters |
+|---|---|
+| AIOMetadata, Nuvio, Xperience | `tmdb_id={tmdb_id?}&imdb_id={imdb_id?}&stremio_id={id}&type={type}` |
+| Bingecat, Discover+ | `tmdb_id={tmdb_id}&type={type}` |
+
+Nuvio's pattern resolver takes AIOMetadata's placeholder set, optional `{name?}` form included, and Xperience builds Nuvio configurations, so all three end up in front of the same resolver and share the optimal URL. Bingecat and Discover+ reject `{name?}` at config time and won't save a URL containing one; as each gains the form it moves onto the optimal URL, and once neither is left every client shares a single one.
+
+Left-click copies for the client you last chose (the first press opens the menu, since there is nothing to repeat yet); right-click always opens the menu, as does a press-and-hold on touch. The choice is remembered per browser and is not part of the saved configuration, so an imported or shared config URL never carries someone else's client with it.
+
+Required is the right form for the short template: `tmdb_id` is the only id those clients can send, so a title they have no TMDB id for has nothing to render from, and nulling the URL leaves the client's own poster in place. Nothing visible is lost by its missing `imdb_id` — `tmdb_id` identifies the title and the server reads the IMDb id back out of TMDB's metadata for the enrichment that needs one, though sending a concrete `imdb_id` does key the rating cache by IMDb id, sharing that row with every other client.
+
+A build that doesn't understand `{name?}` leaves the placeholder in the URL verbatim; a literal `{tmdb_id?}` or `{imdb_id?}` is read as "no id" and the request renders from whatever else it carries, so that degrades to the same place rather than to a 400.
 
 For a title with no IMDb id anywhere, TMDB artwork, logos, MDBList ratings, awards, sashes, genres and release status all work normally. Only the IMDb-keyed extras are unavailable: Metahub logo fallback, digital-release detection, and automatic stream-quality badges (an explicit `quality=` still works, which is why the Plex and Jellyfin sync scripts keep full badges either way).
 
@@ -476,17 +495,15 @@ https://yourdomain.com/poster?kitsu_id={kitsu_id}&type=series
 
 No id conversion happens in either direction. If your client can't supply one of these ids, don't use these parameters — simpler providers group anime under TV series with `tmdb_id`/`imdb_id` and keep working exactly as before. Both bare (`12345`) and Stremio-prefixed (`kitsu:12345`) forms are accepted. When both params are supplied, AniList wins.
 
-Enable **Anime IDs** in the configurator's Core tab (off by default) and it appends one placeholder:
+There is nothing to switch on: the configurator's [client templates](#client-templates) append the placeholder for the clients that can resolve an anime id and leave it off for the ones that can't.
 
 ```
-?tmdb_id={tmdb_id}&stremio_id={id}&type={type}
+?tmdb_id={tmdb_id?}&imdb_id={imdb_id?}&stremio_id={id}&type={type}
 ```
 
-`{id}` is AIOMetadata's raw Stremio meta id — `kitsu:7442` for a Kitsu-catalogue anime, `tt0903747` or `tmdb:1396` otherwise. PostersPlus reads the namespace off it and ignores anything that isn't an anime id, so the same URL serves your whole library. When it holds an IMDb id, that is also used as the title's identity, which shares its rating cache row with clients that send `imdb_id` directly.
+`{id}` is the raw Stremio / Nuvio meta id — `kitsu:7442` for a Kitsu-catalogue anime, `tt0903747` or `tmdb:1396` otherwise. PostersPlus reads the namespace off it and ignores anything that isn't an anime id, so the same URL serves your whole library. When it holds an IMDb id, that is also used as the title's identity, which shares its rating cache row with clients that send `imdb_id` directly.
 
-**This is for AIOMetadata only — leave it off for anything else,** since no other metadata addon exposes anime IDs.
-
-Why `{id}` rather than `{kitsu_id}`: the per-namespace placeholder is empty for every live-action title, and an empty *required* placeholder makes AIOMetadata's resolver abandon the whole URL — so it would have to be the optional `{kitsu_id?}` form. That syntax isn't universally accepted (Bingecat rejects it at config time, and it has been reported failing on AIOMetadata builds that nominally support it). `{id}` is a plain placeholder, present in every AIOMetadata version, and always populated, so it can never null the URL.
+Why `{id}` rather than `{kitsu_id}`: the per-namespace placeholder is empty for every live-action title, and an empty *required* placeholder makes the resolver abandon the whole URL — so it would have to be the optional `{kitsu_id?}` form, which Bingecat and Discover+ reject at config time. `{id}` is a plain placeholder, present in every build, and always populated, so it can never null the URL.
 
 `anilist_id=` and `kitsu_id=` are still accepted for URLs generated before this, and both bare (`12345`) and prefixed (`kitsu:12345`) forms work.
 

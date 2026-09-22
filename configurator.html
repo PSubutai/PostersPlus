@@ -424,6 +424,23 @@
     outline: none;
   }
 
+  /* Menu rows that act rather than navigate are buttons, so they need the
+     browser's button chrome stripped back to the anchor's appearance. */
+  button.menu-item {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 0;
+    font: inherit;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+
+  /* Marks the client a plain left-click copies for. */
+  .menu-item.is-current { color: var(--gold-bright); }
+  .menu-item.is-current::after { content: " \2713"; }
+
   /* Status readout sits bare next to the preview title — a state dot, not a
      chip, so it doesn't compete with the version pill opposite it.  Qualified
      with :not([hidden]) so this display rule can't outrank the hidden
@@ -2224,14 +2241,6 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <input type="text" id="cfg-mdblist-key" placeholder="Optional — server key used if blank" oninput="build(); queuePreviewReload(); saveApiKeys()">
             </div>
 
-            <div class="toggle-row" id="anime-ids-row">
-              <span class="toggle-label" data-tip="Support Kitsu and AniList IDs for artwork. AIOMetadata only. The providers ship no logos, so a TMDB key is needed for anime logos; without one the title is drawn as text.">Anime IDs</span>
-              <label class="toggle-switch">
-                <input type="checkbox" id="tog-anime-ids" onchange="build()">
-                <div class="toggle-track"><div class="toggle-thumb"></div></div>
-              </label>
-            </div>
-
             <div class="field callout" id="trending-schedule-field" style="display:none;">
               <label class="field-label" style="display:flex; align-items:center; gap:6px;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
@@ -3331,8 +3340,10 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
         <!-- Errors surface here, directly under where the poster renders. -->
         <div class="preview-error" id="preview-error" hidden></div>
         <div class="preview-actions">
-          <button class="btn btn-preview" onclick="copyUrl()"
-            data-tip="Copies the poster URL. Paste it into AIOMetadata → Art Providers → Custom Art URLs → Poster URL Pattern. In landscape view it copies the landscape URL instead.">Copy config</button>
+          <button class="btn btn-preview" id="copy-config-btn" onclick="copyUrl()"
+            oncontextmenu="return openCopyMenu(event)"
+            aria-haspopup="true" aria-expanded="false"
+            data-tip="Copies the poster URL for your client. Right-click to pick a different one. In landscape view it copies the landscape URL instead.">Copy config</button>
           <button class="btn btn-primary" onclick="openPresetModal()"
             data-tip="Replace the current settings with a saved preset.">Load preset</button>
           <button class="btn btn-reset" onclick="resetDefaults(); build(); queuePreviewReload(); saveApiKeys()"
@@ -3361,6 +3372,10 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
   <a class="menu-item" id="ext-mdblist" href="#" target="_blank" rel="noopener" role="menuitem">MDBList</a>
   <a class="menu-item" id="ext-simkl" href="#" target="_blank" rel="noopener" role="menuitem">SIMKL</a>
 </div>
+
+<!-- Filled from COPY_TEMPLATES at init so the client list lives in one place.
+     Parked here for the same reason as the menu above. -->
+<div class="menu" id="copy-menu" role="menu" aria-label="Copy the poster URL for" hidden></div>
 
 <div class="preset-modal" id="preset-modal" onclick="if(event.target===this)closePresetModal()">
   <div class="preset-modal-box">
@@ -4727,7 +4742,12 @@ function toggleExternalMenu(ev) {
 
   menu.hidden = false;
   btn.setAttribute('aria-expanded', 'true');
+  positionMenu(menu, btn);
+}
 
+/** Places an already-revealed .menu under its anchor, flipping above it when
+ *  the viewport is too short. Shared by both menus. */
+function positionMenu(menu, btn) {
   // Park at the origin before measuring: a fixed, width:auto box shrinks
   // against the viewport edge, so measuring it in place under-reports it.
   menu.style.left = '0px';
@@ -4736,8 +4756,8 @@ function toggleExternalMenu(ev) {
   const m = menu.getBoundingClientRect();
   const M = 8;
 
-  // Right-aligned to the button: it sits at the panel's right edge, so a
-  // left-aligned menu would hang off the side.
+  // Right-aligned to the button: both anchors sit towards the panel's right
+  // edge, so a left-aligned menu would hang off the side.
   let left = Math.max(M, Math.min(b.right - m.width, window.innerWidth - m.width - M));
   let top  = b.bottom + 6;
   if (top + m.height > window.innerHeight - M) top = Math.max(M, b.top - m.height - 6);
@@ -4748,13 +4768,18 @@ function toggleExternalMenu(ev) {
 // Dismiss on an outside click, Escape, or anything that moves the anchor.
 // Picking an item closes it too — the destination opens in a new tab, so
 // without this the menu would still be sitting there on return.
+function closeMenus() { closeExternalMenu(); closeCopyMenu(); }
 document.addEventListener('click', ev => {
-  if (ev.target.closest?.('.menu-item')) { closeExternalMenu(); return; }
-  if (!ev.target.closest?.('#external-menu, #external-link')) closeExternalMenu();
+  if (ev.target.closest?.('.menu-item')) { closeMenus(); return; }
+  // The anchors are excluded so the click that opens a menu does not also
+  // close it on the way back up.
+  if (!ev.target.closest?.('#external-menu, #external-link, #copy-menu, #copy-config-btn')) {
+    closeMenus();
+  }
 });
-document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeExternalMenu(); });
-window.addEventListener('scroll', closeExternalMenu, true);
-window.addEventListener('resize', closeExternalMenu);
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeMenus(); });
+window.addEventListener('scroll', closeMenus, true);
+window.addEventListener('resize', closeMenus);
 
 function decodePlaceholders(url) {
   return url.replace(/%7B/g, '{').replace(/%7D/g, '}')
@@ -4771,7 +4796,13 @@ function decodePlaceholders(url) {
 // ("X doesn't work on landscape") — but the saved settings must not be
 // filtered that way, or a reload in landscape view would forget every
 // portrait setting.  saveSettings() is the one caller that passes it.
-function buildBaseParams({ usePlaceholders = false, domainOverride = null, full = false } = {}) {
+function buildBaseParams({ usePlaceholders = false, domainOverride = null, full = false,
+                           templateId = null } = {}) {
+  // Which ids the URL can carry is a fact about the client, not a preference —
+  // see COPY_TEMPLATES.  An unrecognised id (or none, which is what the saved
+  // settings and the concrete preview URL pass) falls back to the neutral
+  // shape, so a remembered client choice never leaks into stored settings.
+  const template       = COPY_TEMPLATES.find(t => t.id === templateId) || COPY_TEMPLATE_NEUTRAL;
   const domain         = (domainOverride || vEl('cfg-domain')).replace(/\/$/, '') || 'https://your-instance.com';
   const logoLanguage   = vEl('cfg-language') || 'en';
   // Unresolved stays empty rather than falling back to a literal "{imdb_id}":
@@ -4781,7 +4812,9 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
   // Likewise a concrete url with no TMDB id sends none: the IMDb id renders
   // it (a key-less Cinemeta pick has only that), where a literal placeholder
   // would be reported as a malformed id.
-  const tmdbId         = usePlaceholders ? '{tmdb_id}'  : resolvedTmdbId;
+  const tmdbId         = usePlaceholders
+    ? (template.tmdbOptional ? '{tmdb_id?}' : '{tmdb_id}')
+    : resolvedTmdbId;
   const accKey         = vEl('cfg-access-key');
   const type           = usePlaceholders ? '{type}'     : mediaType;
   const userTmdbKey    = vEl('cfg-tmdb-key');
@@ -4797,59 +4830,54 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
   const params = new URLSearchParams();
 
   // ── Core identity ──────────────────────────────────────────────────────────
-  // Anime ids: opt-in, and placeholder-only (the live preview renders one
-  // concrete title picked from TMDB search, so there is nothing to substitute).
+  // The ids a URL can carry are the one part of it that is client specific, so
+  // they come from the copy template (COPY_TEMPLATES) rather than from a
+  // toggle. Placeholders are template-only: the live preview renders one
+  // concrete title picked from search, so there is nothing to substitute.
   //
-  // Sent as AIOMetadata's "{id}" — the raw Stremio meta id, which is
-  // "kitsu:7442" for anime and "tt0903747" or "tmdb:1396" otherwise. The server
-  // reads the namespace off it and ignores anything non-anime.
+  // Neither core id is required on a client that implements "{name?}", and
+  // that is the whole point of the optional form: a REQUIRED placeholder with
+  // no value makes the resolver abandon the WHOLE url, so the title loses its
+  // poster outright rather than losing the enrichment that one id carries.
+  // Both ids hit that case in practice — TMDB returns imdb_id: null for titles
+  // it has no IMDb link for, and a client's catalogue routinely has no TMDB id
+  // for a title (Nuvio's often doesn't) — and either id renders on its own, so
+  // both go in the optional form. An id that resolves to empty simply isn't
+  // sent, and "{id}" still identifies the title.
   //
-  // Deliberately NOT the per-namespace "{kitsu_id}" placeholder. That one is
-  // empty for every live-action title, and an empty required placeholder makes
-  // AIOMetadata's resolver abandon the whole URL — so it would have to be the
-  // optional "{kitsu_id?}" form, and that syntax isn't universally accepted:
-  // Bingecat rejects it outright at config time, and it has been reported
-  // failing on some AIOMetadata builds too. "{id}" is a plain placeholder,
-  // present in every AIOMetadata version, and always populated — so it can
-  // never null the URL and never needs the optional form.
-  //
-  // tmdb_id uses the REQUIRED "{name}" form; the anime ids use the optional
-  // "{name?}" form. That split is deliberate and load-bearing:
-  //
-  //   - Required is understood by every AIOMetadata build. Optional is not —
-  //     older ones leave the placeholder in the URL verbatim, and a literal
-  //     placeholder where the core id belongs fails validation server-side and
-  //     400s the poster. Never put the core id in the optional form.
-  //   - The anime ids can't be required: the resolver returns null for the
-  //     whole URL as soon as a required placeholder has no value, so
-  //     "{kitsu_id}" would kill every live-action poster.
-  //   - Optional is safe for them precisely because they are optional to us.
-  //     A build that understands it substitutes the id (or empty); one that
-  //     doesn't leaves "{kitsu_id?}" literal, and the server treats a literal
-  //     placeholder as absent and takes the ordinary TMDB path.
-  //
-  // imdb_id is no longer emitted at all, and that is the same rule read the
-  // other way. It cannot be required: TMDB returns imdb_id: null for titles it
-  // has no IMDb link for, and the resolver then nulls the WHOLE url — those
-  // titles lost their poster entirely rather than losing their rating. It also
-  // cannot be optional: Bingecat rejects "{name?}" at config time and some
-  // AIOMetadata builds pass it through verbatim.
-  //
-  // Nothing visible is lost by dropping it. tmdb_id alone identifies the title,
-  // and the server reads the IMDb id back out of TMDB's own metadata for the
+  // A client that rejects "{name?}" at config time gets the required
+  // "{tmdb_id}" and nothing else. Required is right for it: that id is the only
+  // one it can send, so a title it cannot resolve one for has nothing to render
+  // from, and nulling the url leaves the client's own poster in place. It loses
+  // nothing visible by sending no imdb_id — tmdb_id identifies the title and
+  // the server reads the IMDb id back out of TMDB's metadata for the
   // enrichment that needs one (Metahub logo fallback, digital-release
-  // detection, stream-quality lookups). Urls generated before this — and any
-  // client that has a reliable IMDb id, such as the Plex and Jellyfin sync
-  // scripts — keep sending imdb_id and are still accepted; doing so also keys
-  // the rating cache by IMDb id, which is what those scripts want.
+  // detection, stream-quality lookups). Sending a concrete imdb_id does key the
+  // rating cache by IMDb id, which is why the Plex and Jellyfin sync scripts —
+  // which always have a reliable one — do.
   //
-  // AIOMetadata also offers {mal_id} and {anidb_id}; neither is emitted because
+  // Older builds that do not understand "{name?}" leave the placeholder in the
+  // URL verbatim; the server reads a literal core placeholder as "no id"
+  // (_normalise_optional_id) and renders from whatever else the url carries,
+  // so that degrades to the same place rather than to a malformed-id 400.
+  //
+  // Anime ids ride on "{id}": the raw Stremio/Nuvio meta id, "kitsu:7442" for
+  // an anime-catalogue title and "tt0903747" or "tmdb:1396" otherwise. The
+  // server reads the namespace off it and ignores anything non-anime, so the
+  // same URL serves the whole library; when it holds an IMDb id, that is also
+  // taken as the title's identity. Deliberately NOT the per-namespace
+  // "{kitsu_id}" placeholder — that one is empty for every live-action title,
+  // so it would have to be optional too, where "{id}" is plain, present in
+  // every build, and always populated, and can never null the URL.
+  //
+  // Both clients also offer {mal_id} and {anidb_id}; neither is emitted because
   // neither is wired as an art source (MAL needs auth, AniDB's API is heavily
   // restricted). The server ignores them if you add them by hand.
   if (tmdbId) params.set('tmdb_id', tmdbId);
   if (imdbId) params.set('imdb_id', imdbId);
-  if (usePlaceholders && c('tog-anime-ids')) {
-    params.set('stremio_id', '{id}');
+  if (usePlaceholders) {
+    if (template.imdbOptional) params.set('imdb_id',    '{imdb_id?}');
+    if (template.animeIds)     params.set('stremio_id', '{id}');
   }
   params.set('type',    type);
   params.set('primary_client', vEl('cfg-primary-client') || 'stremio_desktop_web');
@@ -5167,7 +5195,180 @@ function buildPreviewUrl() {
   const override = _REWRITE_DOMAIN ? window.location.origin : null;
   return buildBaseParams({ usePlaceholders: false, domainOverride: override });
 }
-function buildTemplateUrl() { return buildBaseParams({ usePlaceholders: true }); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Copy templates
+//
+// Which placeholders a URL may use is a fact about the client that will
+// resolve them, not a preference — so Copy config asks which client the URL is
+// for, instead of asking the user to reason about placeholder syntax. This is
+// also why there is no Anime IDs switch any more: anime ids are simply on for
+// the clients that can resolve them and off for the ones that cannot.
+//
+//   tmdbOptional — sends "tmdb_id={tmdb_id?}" rather than the required form.
+//   imdbOptional — sends "imdb_id={imdb_id?}".
+//   animeIds     — sends "stremio_id={id}", which carries kitsu:/anilist: ids
+//                  for anime and the ordinary id for everything else.
+//
+// The first two are the same fact: a client that implements "{name?}" may have
+// either core id resolve to empty without losing the URL (see the note in
+// buildBaseParams). A client that does not gets the required form and must
+// have a TMDB id for the title, because a literal placeholder is all it could
+// otherwise send. So the flags only ever travel together, as the two shapes
+// below.
+//
+// There are only two shapes behind the client list. Nuvio's pattern resolver
+// takes the same placeholder set as AIOMetadata, optional "{name?}" form
+// included, and Xperience builds Nuvio configurations, so its patterns end up
+// in front of that same resolver. Bingecat and Discover+ are the holdouts:
+// they reject "{name?}" at config time and will not save the URL at all. As
+// each one gains the form, move it onto OPTIMAL; once none are left the client
+// list collapses to a single URL.
+const COPY_SHAPE_OPTIMAL  = { tmdbOptional: true,  imdbOptional: true,  animeIds: true  };
+const COPY_SHAPE_REQUIRED = { tmdbOptional: false, imdbOptional: false, animeIds: false };
+
+const COPY_TEMPLATES = [
+  { id: 'aiometadata', name: 'AIOMetadata', ...COPY_SHAPE_OPTIMAL,
+    where: 'AIOMetadata → Art Providers → Custom Art URLs → Poster URL Pattern' },
+  { id: 'nuvio', name: 'Nuvio', ...COPY_SHAPE_OPTIMAL,
+    where: "Nuvio's custom poster URL pattern" },
+  { id: 'xperience', name: 'Xperience', ...COPY_SHAPE_OPTIMAL,
+    where: "Xperience's poster provider URL" },
+  // Kept as their own entries rather than folded together: these are the
+  // clients whose URL differs, and the ones that have to change when that
+  // stops being so.
+  //
+  // Neither can be given the optional form, and Discover+ is the reason this
+  // has to be decided here rather than left to the user. Bingecat at least
+  // refuses a "{name?}" URL at config time and says the URL is invalid, so the
+  // mistake is visible. Discover+ accepts it, saves it, and then silently
+  // serves nothing — no error, no posters, nothing pointing at the URL. A user
+  // who picked the wrong entry there has no way to work out why.
+  { id: 'bingecat', name: 'Bingecat', ...COPY_SHAPE_REQUIRED,
+    where: "the addon's poster URL field" },
+  { id: 'discoverplus', name: 'Discover+', ...COPY_SHAPE_REQUIRED,
+    where: "the addon's poster URL field" },
+];
+// tmdb_id and nothing else. The saved settings round-trip through this shape,
+// so a remembered client choice never lands in stored configuration, and it is
+// what an unknown template id falls back to.
+const COPY_TEMPLATE_NEUTRAL = { id: '', name: '', ...COPY_SHAPE_REQUIRED };
+const COPY_TEMPLATE_KEY = 'postersplus_copy_template';
+
+/** The template a plain left-click copies, or null when none is remembered —
+ *  the first click opens the menu rather than guessing a client. */
+function rememberedTemplate() {
+  let id = null;
+  try { id = localStorage.getItem(COPY_TEMPLATE_KEY); } catch (e) {}
+  return COPY_TEMPLATES.find(t => t.id === id) || null;
+}
+
+/** The shape the URL box shows. Before anything is remembered that is the
+ *  first template rather than the neutral shape, so the box is never a URL no
+ *  client would be given. */
+function displayedTemplate() { return rememberedTemplate() || COPY_TEMPLATES[0]; }
+
+function buildTemplateUrl(templateId = displayedTemplate().id) {
+  return buildBaseParams({ usePlaceholders: true, templateId });
+}
+
+// Touch has no right-click, so press-and-hold is the second way into the menu.
+// Android fires contextmenu from that same gesture and iOS Safari does not,
+// which is why both routes exist and why openCopyMenu guards against the pair
+// arriving together. Mouse pointers are left alone — they have the real thing.
+let _copyMenuOpenedAt = 0;   // guards the contextmenu that trails a long press
+let _copyLongPressed  = false;  // swallows the click that trails it
+let _copyPressTimer   = null;
+let _copyPressOrigin  = null;
+
+function armCopyLongPress(ev) {
+  if (ev.pointerType === 'mouse') return;
+  clearTimeout(_copyPressTimer);
+  _copyLongPressed = false;
+  _copyPressOrigin = { x: ev.clientX, y: ev.clientY };
+  _copyPressTimer = setTimeout(() => { _copyLongPressed = true; openCopyMenu(); }, 500);
+}
+/** A finger never holds perfectly still, so only a real drag — the start of a
+ *  scroll — counts as leaving the button. */
+function moveCopyLongPress(ev) {
+  if (!_copyPressOrigin) return;
+  if (Math.hypot(ev.clientX - _copyPressOrigin.x, ev.clientY - _copyPressOrigin.y) > 10) {
+    cancelCopyLongPress();
+  }
+}
+function cancelCopyLongPress() { clearTimeout(_copyPressTimer); _copyPressOrigin = null; }
+
+/** Fills the menu once, and keeps the tick and the button's tooltip pointed at
+ *  whatever a left-click would copy. */
+function renderCopyMenu() {
+  const menu = document.getElementById('copy-menu');
+  const btn  = document.getElementById('copy-config-btn');
+  if (!menu) return;
+  if (btn && !btn.dataset.copyWired) {
+    btn.dataset.copyWired = '1';
+    btn.addEventListener('pointerdown', armCopyLongPress);
+    btn.addEventListener('pointermove', moveCopyLongPress);
+    for (const done of ['pointerup', 'pointerleave', 'pointercancel']) {
+      btn.addEventListener(done, cancelCopyLongPress);
+    }
+  }
+  if (!menu.childElementCount) {
+    for (const t of COPY_TEMPLATES) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'menu-item';
+      item.id = `copy-tpl-${t.id}`;
+      item.setAttribute('role', 'menuitem');
+      item.textContent = t.name;
+      item.onclick = () => copyTemplate(t.id);
+      menu.appendChild(item);
+    }
+  }
+  const current = rememberedTemplate();
+  for (const t of COPY_TEMPLATES) {
+    document.getElementById(`copy-tpl-${t.id}`)
+      ?.classList.toggle('is-current', !!current && current.id === t.id);
+  }
+  if (btn) {
+    btn.setAttribute('data-tip', current
+      ? `Copies the ${current.name} poster URL — paste it into ${current.where}. `
+        + 'Right-click to copy it for a different client. '
+        + 'In landscape view it copies the landscape URL instead.'
+      : 'Copies the poster URL for your client. Click to pick one — after that, '
+        + 'a left-click copies it again and a right-click picks another. '
+        + 'In landscape view it copies the landscape URL instead.');
+  }
+}
+
+function closeCopyMenu() {
+  const menu = document.getElementById('copy-menu');
+  const btn  = document.getElementById('copy-config-btn');
+  if (menu) menu.hidden = true;
+  if (btn)  btn.setAttribute('aria-expanded', 'false');
+}
+
+/** Right-click always lands here; left-click only when nothing is remembered.
+ *  Returns false so the platform context menu stays out of the way. */
+function openCopyMenu(ev) {
+  ev?.preventDefault();
+  ev?.stopPropagation();
+  const menu = document.getElementById('copy-menu');
+  const btn  = document.getElementById('copy-config-btn');
+  if (!menu || !btn) return false;
+  if (!menu.hidden) {
+    // A long press on Android opens the menu on the timer and then delivers a
+    // contextmenu for the same gesture; that second event must not shut it.
+    if (Date.now() - _copyMenuOpenedAt < 600) return false;
+    closeCopyMenu();
+    return false;
+  }
+  renderCopyMenu();
+  menu.hidden = false;
+  _copyMenuOpenedAt = Date.now();
+  btn.setAttribute('aria-expanded', 'true');
+  positionMenu(menu, btn);
+  return false;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clipboard
@@ -5273,9 +5474,33 @@ async function copyText(text) {
   return false;
 }
 
+/** The button's own click. Copies for the remembered client; with nothing
+ *  remembered there is no sensible guess, so it opens the menu instead — which
+ *  is also how the choice is discovered in the first place. */
 async function copyUrl() {
-  const url = buildTemplateUrl();
-  const btn = document.querySelector('.preview-actions .btn-preview');
+  // The tap that ends a press-and-hold still arrives as a click; the menu it
+  // just opened is the action, not a copy.
+  if (_copyLongPressed) { _copyLongPressed = false; return; }
+  const current = rememberedTemplate();
+  if (!current) { openCopyMenu(); return; }
+  await copyTemplate(current.id);
+}
+
+/** Copies the URL in one client's shape and remembers that client, so the next
+ *  left-click repeats it without reopening the menu. */
+async function copyTemplate(templateId) {
+  const template = COPY_TEMPLATES.find(t => t.id === templateId);
+  if (!template) return;
+  try { localStorage.setItem(COPY_TEMPLATE_KEY, template.id); } catch (e) {}
+  closeCopyMenu();
+  const url = buildTemplateUrl(template.id);
+  // The box is the manual-copy fallback below, and on a non-secure origin it
+  // is on screen throughout — either way it must show the URL being copied,
+  // not the one the last choice left behind.
+  if (_SHOW_URL_BOX) document.getElementById('url-display-input').value = url;
+  renderCopyMenu();
+
+  const btn = document.getElementById('copy-config-btn');
   if (await copyText(url)) {
     setStatus('');
     // The console strip used to confirm this; the button says so itself now.
@@ -5289,7 +5514,7 @@ async function copyUrl() {
     const inp = document.getElementById('url-display-input');
     inp.focus();
     inp.select();
-    setStatus('URL selected — copy it manually, then paste into AIOMetadata → Art Providers → Custom Art URLs → Poster URL Pattern.', 'info');
+    setStatus(`URL selected — copy it manually, then paste into ${template.where}.`, 'info');
     return;
   }
   setStatus('Clipboard copy failed — check browser permissions.', 'err');
@@ -6182,7 +6407,7 @@ const _BOTH_SHAPES_CONTROLS = new Set([
   ..._SHAPE_SHARED, ..._LANDSCAPE_ONLY_CONTROLS, 'tog-landscape',
   'cfg-language', 'cfg-language-secondary', 'cfg-logo-priority',
   'tog-fallback-imdb', 'cfg-imdb-rating-source', 'cfg-tmdb-rating-source',
-  'tog-release-cinema-only', 'tog-release-dates', 'tog-anime-ids', 'tog-anime-weights',
+  'tog-release-cinema-only', 'tog-release-dates', 'tog-anime-weights',
   'cfg-primary-client', 'cfg-domain', 'cfg-access-key', 'cfg-tmdb-key', 'cfg-mdblist-key',
   'cfg-search-query',
 ]);
@@ -6422,10 +6647,9 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
     _setEl('cfg-landscape-color-link', p.get('landscape_color_link') || 'badge_follows_vignette');
     _setEl('cfg-landscape-badge-scale', p.get('landscape_badge_scale') || '1.00');
   }
-  // Presence of either anime placeholder re-arms the toggle, so pasting a
-  // previously generated URL round-trips it (and so does the localStorage
-  // restore, which replays the saved params through this same importer).
-  if (p.has('stremio_id') || p.has('anilist_id') || p.has('kitsu_id')) _setEl('tog-anime-ids', 'true');
+  // Anime ids carry no setting to restore: which ids a URL may use is decided
+  // by the copy template now, so stremio_id / anilist_id / kitsu_id on an
+  // imported URL are simply information about the client that generated it.
   updateShapeFields();
   if (p.has('fallback_to_imdb')) _setEl('tog-fallback-imdb', p.get('fallback_to_imdb'));
   if (p.has('imdb_rating_source')) _setEl('cfg-imdb-rating-source', p.get('imdb_rating_source'));
@@ -6697,6 +6921,7 @@ buildWeightSection('tv-weights',    TV_SOURCES,    DEFAULT_TV_W);
 buildWeightSection('anime-movie-weights', ANIME_MOVIE_SOURCES, DEFAULT_ANIME_MOVIE_W);
 buildWeightSection('anime-tv-weights',    ANIME_TV_SOURCES,    DEFAULT_ANIME_TV_W);
 updateAnimeWeightFields();
+renderCopyMenu();
 
 document.querySelectorAll('input[type="range"]').forEach(el => {
   const m = el.getAttribute('oninput')?.match(/update(?:Weight)?Range\(this,'([^']+)'\)/);
