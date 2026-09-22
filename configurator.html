@@ -4909,8 +4909,11 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
   else if (landscape) params.set('shape', 'landscape');
   params.set('primary_client', vEl('cfg-primary-client') || 'stremio_desktop_web');
   if (accKey)         params.set('access_key',  accKey);
-  if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
-  if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
+  // A client that has no "{tmdb_key}" / "{mdblist_key}" of its own would send
+  // the placeholder verbatim, so it gets the key typed here instead.
+  const keyHolders = usePlaceholders && !template.literalKeys;
+  if (userTmdbKey)    params.set('tmdb_key',     keyHolders ? '{tmdb_key}'    : userTmdbKey);
+  if (userMdblistKey) params.set('mdblist_key',  keyHolders ? '{mdblist_key}' : userMdblistKey);
   if (emitAll) {
     params.set('top_gradient',    vEl('cfg-top-gradient')    || 'high');
     if (vEl('cfg-top-gradient') === 'custom') {
@@ -5287,6 +5290,9 @@ function buildPreviewUrl() {
 //   animeIds     — sends "stremio_id={id}", which carries kitsu:/anilist: ids
 //                  for anime and the ordinary id for everything else.
 //   shapePlaceholder — sends "shape={shape}", one URL serving both layouts.
+//   literalKeys  — sends the TMDB / MDBList keys typed into the configurator
+//                  rather than "{tmdb_key}" / "{mdblist_key}", for a client
+//                  that has no key of its own to substitute.
 //
 // The first two are the same fact: a client that implements "{name?}" may have
 // either core id resolve to empty without losing the URL (see the note in
@@ -5324,10 +5330,15 @@ const COPY_SHAPE_REQUIRED = { tmdbOptional: false, imdbOptional: false, animeIds
 // both layouts agree on (see omitServerDefaults).
 const COPY_SHAPE_DUAL = { shapePlaceholder: true };
 
+// Nuvio has no "{tmdb_key}" or "{mdblist_key}" to fill in — it holds no keys of
+// ours — so its URL carries the configurator's keys as literals. A key left
+// blank is still left out, and the server's own key is used.
+const COPY_KEYS_LITERAL = { literalKeys: true };
+
 const COPY_TEMPLATES = [
   { id: 'aiometadata', name: 'AIOMetadata', ...COPY_SHAPE_OPTIMAL,
     where: 'AIOMetadata → Art Providers → Custom Art URLs → Poster URL Pattern' },
-  { id: 'nuvio', name: 'Nuvio', ...COPY_SHAPE_OPTIMAL, ...COPY_SHAPE_DUAL,
+  { id: 'nuvio', name: 'Nuvio', ...COPY_SHAPE_OPTIMAL, ...COPY_SHAPE_DUAL, ...COPY_KEYS_LITERAL,
     where: "Nuvio's custom poster URL pattern" },
   { id: 'xperience', name: 'Xperience', ...COPY_SHAPE_OPTIMAL,
     where: "Xperience's poster provider URL" },
