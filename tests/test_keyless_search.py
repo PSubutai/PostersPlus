@@ -111,3 +111,40 @@ class CinemetaStructureTests(unittest.TestCase):
         src = open("main.py", encoding="utf-8").read()
         self.assertIn('elif use_cinemeta and tmdb_data.get("cinemeta_theatrical_date"):', src)
         self.assertIn("if has_tmdb_id and (effective_tmdb_key or trending_source_url(type))", src)
+
+
+class MdblistReleaseDatesTests(unittest.TestCase):
+    def test_digital_date_is_remembered_and_read_back(self):
+        import ratings, cache
+        store = {}
+        def fake_set(key, value, ttl): store[key] = (value, ttl)
+        def fake_get(key): return store.get(key, (None,))[0]
+        with mock.patch.object(cache, "set_cached_tvdb_json", fake_set), \
+             mock.patch.object(cache, "get_cached_tvdb_json", fake_get):
+            ratings.remember_mdblist_release_dates("tt1", "movie",
+                {"released": "2026-03-15", "released_digital": "2026-05-12T00:00:00"})
+            self.assertEqual(ratings.mdblist_release_dates("tt1", "movie"),
+                             {"released": "2026-03-15", "released_digital": "2026-05-12"})
+            self.assertEqual(store["mdblist_dates:movie:tt1"][1], ratings._MDBLIST_DATES_TTL_KNOWN)
+            # No digital date yet: kept briefly so it is re-asked soon.
+            ratings.remember_mdblist_release_dates("tt2", "movie", {"released": "2026-09-01"})
+            self.assertEqual(store["mdblist_dates:movie:tt2"][1], ratings._MDBLIST_DATES_TTL_PENDING)
+            # Series and empty records write nothing; series read nothing.
+            ratings.remember_mdblist_release_dates("tt3", "tv", {"released": "2026-09-01"})
+            ratings.remember_mdblist_release_dates("tt4", "movie", {})
+            self.assertNotIn("mdblist_dates:show:tt3", store)
+            self.assertNotIn("mdblist_dates:movie:tt4", store)
+            self.assertIsNone(ratings.mdblist_release_dates("tt1", "tv"))
+            self.assertIsNone(ratings.mdblist_release_dates(None, "movie"))
+
+    def test_keyless_status_uses_the_digital_date(self):
+        import tmdb
+        from datetime import date, timedelta
+        past = (date.today() - timedelta(days=60)).isoformat()
+        digital = (date.today() - timedelta(days=10)).isoformat()
+        self.assertEqual(tmdb._compute_movie_status_from_dates(
+            tmdb._parse_tmdb_date(past), tmdb._parse_tmdb_date(digital), None, None), "Streaming")
+        self.assertEqual(tmdb._compute_movie_status_from_dates(
+            tmdb._parse_tmdb_date(past), None, None, None), "Cinema")
+        src = open("main.py", encoding="utf-8").read()
+        self.assertIn('_parse_tmdb_date(_mdb_dates.get("released_digital"))', src)

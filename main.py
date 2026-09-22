@@ -736,6 +736,7 @@ from ratings import (
     fetch_rating,
     is_anime_rated,
     mdblist_quota_remaining,
+    mdblist_release_dates,
     parse_custom_score_palette,
     score_color_for_mode,
     _draw_solid_pip,
@@ -7015,11 +7016,15 @@ async def get_poster(
             elif use_cinemeta and tmdb_data.get("cinemeta_theatrical_date"):
                 # No key, so no /release_dates: Cinemeta's theatrical and disc
                 # dates stand in, through the same rule TMDB's dates go
-                # through.  No digital date is known here — the movieleaks
-                # override below supplies "Streaming" when it can.
+                # through.  Cinemeta has no digital date; MDBList's record
+                # does (`released_digital`, remembered by fetch_rating), and
+                # without that the movieleaks override below is the only
+                # route to "Streaming".
+                _mdb_dates = mdblist_release_dates(effective_imdb_id, type) or {}
                 _release_status = _compute_movie_status_from_dates(
-                    _parse_tmdb_date(tmdb_data.get("cinemeta_theatrical_date")),
-                    None,
+                    _parse_tmdb_date(tmdb_data.get("cinemeta_theatrical_date")
+                                     or _mdb_dates.get("released")),
+                    _parse_tmdb_date(_mdb_dates.get("released_digital")),
                     _parse_tmdb_date(tmdb_data.get("cinemeta_physical_date")),
                     None,
                 )

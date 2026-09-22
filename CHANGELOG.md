@@ -124,8 +124,10 @@
   Cinemeta's `moviedb_id` without), and the preview renders from the IMDb id
   alone when there is none. The Presets' ignored inset parameters are gone.
 - More sashes survive without a TMDB key. A Cinemeta-spined movie takes its
-  release status from Cinemeta's theatrical and disc dates (Physical /
-  Cinema / Production, with the movieleaks cache still supplying Streaming),
+  release status from Cinemeta's theatrical and disc dates plus MDBList's
+  `released_digital` (remembered whenever a rating is fetched), so a film
+  that has gone digital reads Streaming rather than Cinema; the movieleaks
+  cache still supplies Streaming without MDBList,
   a series gets its season and episode structure from Cinemeta's episode
   list (Mini Series, Binge Ready, New Season, Returning, Season Finale), and
   a Trending sash backed by a custom MDBList source no longer waits on a key

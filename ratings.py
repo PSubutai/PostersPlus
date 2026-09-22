@@ -118,6 +118,55 @@ def _rating_vote_count(raw: dict) -> int | None:
 # Fetch
 # ---------------------------------------------------------------------------
 
+# MDBList's own release dates, kept beside the rating rather than in it.
+#
+# The record carries `released` (theatrical) and `released_digital`, and the
+# digital date is the one fact the release-status sash cannot get anywhere
+# else without a TMDB key: Cinemeta knows theatrical and disc dates only, so a
+# film weeks into streaming stayed "Cinema" on a key-less instance.  Written
+# on every MDBList answer into the generic JSON cache — the rating tuple and
+# the rating cache row are unpacked in enough places that threading a sixth
+# field through them was the wrong cost for two dates.  A record with no
+# digital date yet is kept only briefly, so the date is picked up once MDBList
+# learns it.
+_MDBLIST_DATES_TTL_KNOWN   = 90 * 86400
+_MDBLIST_DATES_TTL_PENDING = 3 * 86400
+
+
+def _mdblist_dates_key(media_id: str, media_type: str) -> str:
+    kind = "show" if media_type in ("tv", "series") else "movie"
+    return f"mdblist_dates:{kind}:{media_id}"
+
+
+def remember_mdblist_release_dates(media_id: str, media_type: str, data: dict) -> None:
+    from cache import set_cached_tvdb_json
+    if media_type in ("tv", "series"):
+        return
+    released = str(data.get("released") or "")[:10] or None
+    digital  = str(data.get("released_digital") or "")[:10] or None
+    if not released and not digital:
+        return
+    try:
+        set_cached_tvdb_json(
+            _mdblist_dates_key(media_id, media_type),
+            {"released": released, "released_digital": digital},
+            _MDBLIST_DATES_TTL_KNOWN if digital else _MDBLIST_DATES_TTL_PENDING,
+        )
+    except Exception as exc:   # a cache hiccup must not cost the rating
+        logger.warning(f"Could not cache MDBList release dates for {media_id}: {exc}")
+
+
+def mdblist_release_dates(media_id: str | None, media_type: str) -> dict | None:
+    """``{"released", "released_digital"}`` remembered for a movie, or None."""
+    if not media_id or media_type in ("tv", "series"):
+        return None
+    from cache import get_cached_tvdb_json
+    try:
+        return get_cached_tvdb_json(_mdblist_dates_key(media_id, media_type))
+    except Exception:
+        return None
+
+
 async def fetch_rating(
     client: httpx.AsyncClient,
     mdblist_key: str,
@@ -212,6 +261,7 @@ async def fetch_rating(
     data         = resp.json()
     release_date = data.get("released")
     keywords: list[dict] = data.get("keywords") or []
+    remember_mdblist_release_dates(media_id, media_type, data)
 
     age_rating: int | None = data.get("age_rating") or None
     if age_rating is not None:
