@@ -85,6 +85,12 @@ Days to cache a "no such id on Cinemeta" result. Throttles and network errors ar
 
 Default: `3`
 
+### `CINEMA_ASSUMED_DIGITAL_DAYS`
+
+Without a TMDB key, a movie's release status comes from Cinemeta's theatrical and disc dates and MDBList's digital date. When none of those says the film has left cinemas — no MDBList key, or MDBList has no digital date yet — a theatrical release older than this many days is treated as Streaming rather than Cinema. Studio windows have settled at 17–45 days for most films and about 60 for the largest releases. Never consulted when a digital, physical or TMDB date is known. Set to 0 to keep Cinema until a date is known.
+
+Default: `60`
+
 ### `CINEMETA_API_BASE`
 
 Override the Cinemeta endpoint (useful for a proxy or a mirror).

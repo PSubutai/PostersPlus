@@ -148,3 +148,18 @@ class MdblistReleaseDatesTests(unittest.TestCase):
             tmdb._parse_tmdb_date(past), None, None, None), "Cinema")
         src = open("main.py", encoding="utf-8").read()
         self.assertIn('_parse_tmdb_date(_mdb_dates.get("released_digital"))', src)
+
+
+class AssumedDigitalWindowTests(unittest.TestCase):
+    def test_setting_and_wiring(self):
+        import config
+        self.assertEqual(config.CINEMA_ASSUMED_DIGITAL_DAYS, 60)
+        src = open("main.py", encoding="utf-8").read()
+        block = src[src.index('elif use_cinemeta and tmdb_data.get("cinemeta_theatrical_date"):'):]
+        block = block[:block.index("# r/movieleaks confirmation")]
+        # Only a "Cinema" verdict with no digital date is ever promoted, and
+        # only past the window; 0 disables it.
+        self.assertIn('_release_status == "Cinema" and _cm_digital is None', block)
+        self.assertIn("_cfg.CINEMA_ASSUMED_DIGITAL_DAYS > 0", block)
+        self.assertIn(".days > _cfg.CINEMA_ASSUMED_DIGITAL_DAYS", block)
+        self.assertIn('_release_status = "Streaming"', block)

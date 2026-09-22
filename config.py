@@ -278,6 +278,13 @@ ANIME_METADATA_CACHE_DURATION = int(_env('ANIME_METADATA_CACHE_DURATION', "7", g
 ANIME_NEG_CACHE_DURATION      = int(_env('ANIME_NEG_CACHE_DURATION', "3", group='Anime sources', kind='int', label='Anime negative cache (days)', help='Days to cache a no-such-id result from the provider.', min=1, max=365, advanced=True))       # days
 CINEMETA_METADATA_CACHE_DURATION = int(_env('CINEMETA_METADATA_CACHE_DURATION', "7", group='Cinemeta fallback', kind='int', label='Cinemeta metadata cache (days)', help="Days to cache a title's Cinemeta document, including the IMDb-to-TMDB id it carries.", min=1, max=365, advanced=True))  # days
 CINEMETA_NEG_CACHE_DURATION      = int(_env('CINEMETA_NEG_CACHE_DURATION', "3", group='Cinemeta fallback', kind='int', label='Cinemeta negative cache (days)', help='Days to cache a no-such-id result from Cinemeta.', min=1, max=365, advanced=True))       # days
+# Assumed theatrical-to-digital window, for the one case nothing knows a
+# movie's digital date: a Cinemeta-spined render (no TMDB key) with no
+# MDBList record to hand (no key, or MDBList has no date yet).  Studio windows
+# have settled at 17-45 days for most films and ~60 for the largest, so a
+# theatrical date older than this is far more likely to be streaming than in
+# cinemas.  Never consulted when a digital, physical or TMDB date is known.
+CINEMA_ASSUMED_DIGITAL_DAYS = max(0, int(_env('CINEMA_ASSUMED_DIGITAL_DAYS', "60", group='Cinemeta fallback', kind='int', label='Assumed digital window (days)', help="Without a TMDB key, and when MDBList has no digital date for a movie, treat a theatrical release older than this many days as Streaming rather than Cinema. Typical studio windows are 17-45 days, the largest releases about 60. 0 disables the assumption (Cinema until a date is known).", min=0, max=365, advanced=True)))
 DAYS_CONSIDERED_NEW          = 14
 NEW_CACHE_DURATION           = 1
 OLD_CACHE_DURATION           = 14

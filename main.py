@@ -7021,13 +7021,21 @@ async def get_poster(
                 # without that the movieleaks override below is the only
                 # route to "Streaming".
                 _mdb_dates = mdblist_release_dates(effective_imdb_id, type) or {}
+                _cm_theatrical = _parse_tmdb_date(
+                    tmdb_data.get("cinemeta_theatrical_date") or _mdb_dates.get("released"))
+                _cm_digital = _parse_tmdb_date(_mdb_dates.get("released_digital"))
                 _release_status = _compute_movie_status_from_dates(
-                    _parse_tmdb_date(tmdb_data.get("cinemeta_theatrical_date")
-                                     or _mdb_dates.get("released")),
-                    _parse_tmdb_date(_mdb_dates.get("released_digital")),
+                    _cm_theatrical, _cm_digital,
                     _parse_tmdb_date(tmdb_data.get("cinemeta_physical_date")),
                     None,
                 )
+                # With no digital date from anywhere, "Cinema" is only a
+                # statement about how long ago the film opened.  Past the
+                # assumed window it is almost certainly streaming.
+                if (_release_status == "Cinema" and _cm_digital is None
+                        and _cfg.CINEMA_ASSUMED_DIGITAL_DAYS > 0 and _cm_theatrical is not None
+                        and (datetime.now().date() - _cm_theatrical).days > _cfg.CINEMA_ASSUMED_DIGITAL_DAYS):
+                    _release_status = "Streaming"
             # r/movieleaks confirmation overrides TMDB's theatrical/production
             # status — if the film is in the digital-release cache it's already
             # streaming regardless of what the official release dates say.

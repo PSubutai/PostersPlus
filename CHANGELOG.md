@@ -126,8 +126,10 @@
 - More sashes survive without a TMDB key. A Cinemeta-spined movie takes its
   release status from Cinemeta's theatrical and disc dates plus MDBList's
   `released_digital` (remembered whenever a rating is fetched), so a film
-  that has gone digital reads Streaming rather than Cinema; the movieleaks
-  cache still supplies Streaming without MDBList,
+  that has gone digital reads Streaming rather than Cinema; without MDBList
+  as well, `CINEMA_ASSUMED_DIGITAL_DAYS` (default 60) treats a theatrical
+  release older than that as Streaming, and the movieleaks cache still
+  supplies Streaming earlier,
   a series gets its season and episode structure from Cinemeta's episode
   list (Mini Series, Binge Ready, New Season, Returning, Season Finale), and
   a Trending sash backed by a custom MDBList source no longer waits on a key
