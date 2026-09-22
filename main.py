@@ -684,6 +684,7 @@ from awards import FETCH_FAILED, _RateLimited, draw_award_badge, draw_award_sash
 from festivals import match_festival_keyword
 from i18n import load_languages, translate_genre, translate_sash
 from cache import (
+    get_cached_movie_release_info,
     get_cached_quality,
     get_cached_rating,
     get_cached_final_poster_entry,
@@ -5685,6 +5686,14 @@ async def get_poster(
         # same ids, so the two must not share a composite entry. Appended only
         # on that path, so every existing TMDB entry keeps its key.
         _spine_sig = "|art=cinemeta" if use_cinemeta else ""
+        # A render made with no MDBList key has no score, awards, keywords or
+        # age rating baked in, and is never provisional (there was nothing to
+        # fail).  Keyed on its own so that adding a key later re-renders it
+        # rather than serving "N/A" for the rest of a composite TTL — up to
+        # 90 days for a Physical release.  Appended only when the key is
+        # absent, so every keyed entry keeps its key.  Anime is exempt: its
+        # score comes from the provider, key or no key.
+        _mdb_sig = "|mdb=0" if (not effective_mdblist_key and not is_anime) else ""
         _params_hash = hashlib.sha256(
             (
                 "&".join(f"{k}={v}" for k, v in sorted(raw_params.items()))
@@ -5694,6 +5703,7 @@ async def get_poster(
                 + _dataset_sig
                 + _server_sig
                 + _spine_sig
+                + _mdb_sig
             ).encode()
         ).hexdigest()[:16]
         # The anime key has to be part of this: the same imdb/tmdb pair renders
@@ -7021,12 +7031,20 @@ async def get_poster(
                 # without that the movieleaks override below is the only
                 # route to "Streaming".
                 _mdb_dates = mdblist_release_dates(effective_imdb_id, type) or {}
+                # Dates TMDB gave this title while a key was configured are
+                # still facts after the key is gone — a past digital or disc
+                # date never un-happens — so a row that is still within its
+                # tier is used ahead of Cinemeta's coarser dates.
+                _tmdb_dates = (get_cached_movie_release_info(f"movie_{tmdb_id}") or {}) if has_tmdb_id else {}
                 _cm_theatrical = _parse_tmdb_date(
-                    tmdb_data.get("cinemeta_theatrical_date") or _mdb_dates.get("released"))
-                _cm_digital = _parse_tmdb_date(_mdb_dates.get("released_digital"))
+                    _tmdb_dates.get("theatrical_date")
+                    or tmdb_data.get("cinemeta_theatrical_date") or _mdb_dates.get("released"))
+                _cm_digital = _parse_tmdb_date(
+                    _tmdb_dates.get("digital_date") or _mdb_dates.get("released_digital"))
                 _release_status = _compute_movie_status_from_dates(
                     _cm_theatrical, _cm_digital,
-                    _parse_tmdb_date(tmdb_data.get("cinemeta_physical_date")),
+                    _parse_tmdb_date(_tmdb_dates.get("physical_date")
+                                     or tmdb_data.get("cinemeta_physical_date")),
                     None,
                 )
                 # With no digital date from anywhere, "Cinema" is only a

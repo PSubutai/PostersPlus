@@ -147,7 +147,7 @@ class MdblistReleaseDatesTests(unittest.TestCase):
         self.assertEqual(tmdb._compute_movie_status_from_dates(
             tmdb._parse_tmdb_date(past), None, None, None), "Cinema")
         src = open("main.py", encoding="utf-8").read()
-        self.assertIn('_parse_tmdb_date(_mdb_dates.get("released_digital"))', src)
+        self.assertIn('_mdb_dates.get("released_digital")', src)
 
 
 class AssumedDigitalWindowTests(unittest.TestCase):
@@ -163,3 +163,18 @@ class AssumedDigitalWindowTests(unittest.TestCase):
         self.assertIn("_cfg.CINEMA_ASSUMED_DIGITAL_DAYS > 0", block)
         self.assertIn(".days > _cfg.CINEMA_ASSUMED_DIGITAL_DAYS", block)
         self.assertIn('_release_status = "Streaming"', block)
+
+
+class KeyChangeCompositeTests(unittest.TestCase):
+    def test_mdblist_less_composites_are_keyed_apart(self):
+        # Adding an MDBList key later must re-render, not serve N/A for a TTL.
+        src = open("main.py", encoding="utf-8").read()
+        self.assertIn('_mdb_sig = "|mdb=0" if (not effective_mdblist_key and not is_anime) else ""', src)
+        self.assertIn("+ _spine_sig\n                + _mdb_sig", src)
+        # And the Cinemeta spine is keyed apart from the TMDB one already.
+        self.assertIn('_spine_sig = "|art=cinemeta" if use_cinemeta else ""', src)
+
+    def test_keyless_status_reuses_tmdb_dates_left_by_a_removed_key(self):
+        src = open("main.py", encoding="utf-8").read()
+        self.assertIn('get_cached_movie_release_info(f"movie_{tmdb_id}") or {}) if has_tmdb_id else {}', src)
+        self.assertIn('_tmdb_dates.get("digital_date") or _mdb_dates.get("released_digital")', src)
