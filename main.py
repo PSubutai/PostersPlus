@@ -5127,11 +5127,16 @@ async def search_proxy(
         raise HTTPException(status_code=400, detail="Query too long")
 
     effective_key = _resolve_tmdb_key(tmdb_key)
-    if not effective_key:
-        raise HTTPException(status_code=400, detail="No TMDB API key available")
-
     if _HTTP_CLIENT is None:
         raise HTTPException(status_code=503, detail="Service unavailable")
+    if not effective_key:
+        # No key anywhere: search Cinemeta instead, which needs none.  Results
+        # are shaped like TMDB's so the configurator reads them unchanged —
+        # `id` is null (Cinemeta's catalogue carries no TMDB id; /resolve-tmdb
+        # finds one on selection) and the poster is an absolute url.
+        if not _cfg.CINEMETA_ENABLED:
+            raise HTTPException(status_code=400, detail="No TMDB API key available")
+        return {"results": await cinemeta.search(_HTTP_CLIENT, q), "source": "cinemeta"}
     resp = await _HTTP_CLIENT.get(
         "https://api.themoviedb.org/3/search/multi",
         params={
@@ -5173,6 +5178,35 @@ async def resolve_imdb(
     return Response(content=resp.content, media_type="application/json", status_code=resp.status_code)
 
 
+@app.get("/resolve-tmdb")
+async def resolve_tmdb(
+    imdb_id: str,
+    type: str = "movie",
+    tmdb_key: str = "",
+    access_key: str = "",
+):
+    """The TMDB id for an IMDb id, for the configurator's key-less search:
+    TMDB's /find with a key, Cinemeta's moviedb_id without.  ``tmdb_id`` is
+    null when neither knows one; the title still renders from its IMDb id."""
+    if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    _check_imdb_id(imdb_id)
+    _check_type(type)
+    if _HTTP_CLIENT is None:
+        raise HTTPException(status_code=503, detail="Service unavailable")
+    try:
+        resolved = await resolve_imdb_to_tmdb(
+            _HTTP_CLIENT, imdb_id, type, _resolve_tmdb_key(tmdb_key) or None,
+        )
+    except IdResolveError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "imdb_id": imdb_id,
+        "tmdb_id": resolved["tmdb_id"] if resolved else None,
+        "media_type": resolved["media_type"] if resolved else type,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Logo endpoint
 # ---------------------------------------------------------------------------
@@ -5200,7 +5234,7 @@ async def get_logo(
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     _check_type(type)
-    tmdb_id = (tmdb_id or "").strip()
+    tmdb_id = _normalise_optional_id(tmdb_id, "tmdb_id")
     imdb_id = _normalise_optional_id(imdb_id, "imdb_id")
     if tmdb_id:
         _check_tmdb_id(tmdb_id)
@@ -5411,8 +5445,12 @@ async def get_poster(
 
     # Done before anything reads imdb_id — the composite cache key is built from
     # it further down, and a literal "{imdb_id?}" baked into cache keys would
-    # fragment the cache per client build.
+    # fragment the cache per client build.  tmdb_id gets the same reading: now
+    # that an IMDb id alone renders, a client that leaves "{tmdb_id}" verbatim
+    # for a title it has no TMDB id for is asking for the IMDb path, not
+    # reporting a malformed id.
     imdb_id = _normalise_optional_id(imdb_id, "imdb_id")
+    tmdb_id = _normalise_optional_id(tmdb_id, "tmdb_id")
 
     # AIOMetadata's "{id}" is the raw Stremio meta id, and for an ordinary title
     # that IS the IMDb id ("tt0903747"). Generated templates no longer send

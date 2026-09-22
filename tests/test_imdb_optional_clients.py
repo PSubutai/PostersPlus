@@ -30,14 +30,18 @@ class ConfiguratorTemplateTests(unittest.TestCase):
         # pass it through verbatim, so it is not a safe substitute.
         self.assertNotIn("{imdb_id?}", self.html)
 
-    def test_tmdb_id_remains_the_required_identity(self):
-        self.assertIn("params.set('tmdb_id', tmdbId);", self.html)
+    def test_tmdb_id_remains_the_template_identity(self):
+        # The template always carries {tmdb_id}; a concrete preview url sends
+        # the id when it has one and the IMDb id alone otherwise.
+        self.assertIn("usePlaceholders ? '{tmdb_id}'  : resolvedTmdbId", self.html)
+        self.assertIn("if (tmdbId) params.set('tmdb_id', tmdbId);", self.html)
 
     def test_imdb_id_is_only_sent_when_resolved(self):
         self.assertIn("if (imdbId) params.set('imdb_id', imdbId);", self.html)
 
     def test_preview_does_not_wait_on_an_imdb_id(self):
-        self.assertIn("if (resolvedTmdbId) loadPreview();", self.html)
+        # Either id is enough to preview; neither is waited on for the other.
+        self.assertIn("if (resolvedTmdbId || resolvedImdbId) loadPreview();", self.html)
         self.assertNotIn("if (resolvedImdbId && resolvedTmdbId) loadPreview();", self.html)
         self.assertNotIn("if (!resolvedImdbId || !resolvedTmdbId)", self.html)
 

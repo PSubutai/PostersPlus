@@ -118,6 +118,15 @@
   probed on the CDN (Cinemeta names image urls for every title) and cached.
 - A `tmdb_id`-only request without a key is still refused — Cinemeta is
   IMDb-keyed — with a 400 that says an `imdb_id` would render.
+- The configurator searches without a TMDB key: `/search` falls back to
+  Cinemeta's catalogue (IMDb-keyed rows in TMDB's shape), a new
+  `/resolve-tmdb` finds the TMDB id on selection (TMDB's `/find` with a key,
+  Cinemeta's `moviedb_id` without), and the preview renders from the IMDb id
+  alone when there is none. The Presets' ignored inset parameters are gone.
+- A verbatim `{tmdb_id}` or `{tmdb_id?}` on `/poster` and `/logo` is read as
+  "no TMDB id", as `{imdb_id}` already was, so a client that leaves the
+  placeholder in for a title it has no TMDB id for renders from the IMDb id
+  instead of getting a malformed-id 400.
 
 ## v1.2.0 - 2026-09-20
 

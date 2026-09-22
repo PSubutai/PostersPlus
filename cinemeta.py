@@ -26,8 +26,10 @@ Design notes
   art. Only a definite "no such id" (404) is negative-cached — a throttle or an
   outage must not pin a title to the canvas for the whole cache window.
 """
+import asyncio
 import logging
 import re
+from urllib.parse import quote
 
 import httpx
 
@@ -406,6 +408,66 @@ def invalidate_art_probe(imdb_id: str) -> None:
     """Forget a probe result — called when a fetch of the art it vouched for
     came back 404, so the next request re-probes instead of failing again."""
     delete_cached_tvdb_json(_art_probe_key(imdb_id))
+
+
+_SEARCH_LIMIT = 10
+
+
+async def search(client: httpx.AsyncClient, query: str, limit: int = _SEARCH_LIMIT) -> list[dict]:
+    """Title search over Cinemeta's movie and series catalogues, no key needed.
+
+    Returns TMDB ``search/multi``-shaped rows, so the configurator's result
+    list reads them as it reads TMDB's: ``media_type``, ``title`` /
+    ``release_date`` for a movie, ``name`` / ``first_air_date`` for a show.
+    Two fields differ, and are what a key-less caller has to work with:
+    ``id`` is None — the catalogue carries no TMDB id — and ``imdb_id`` is
+    set; ``poster_url`` is an absolute url in place of a TMDB ``poster_path``.
+    Movies and series are interleaved in their own rank order, since the two
+    catalogues cannot be ranked against each other.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+
+    async def _catalog(kind: str) -> list[dict]:
+        url = f"{CINEMETA_API_BASE}/catalog/{kind}/top/search={quote(query)}.json"
+        try:
+            logger.info(f"External API Call: Cinemeta {kind} search for {query!r}")
+            resp = await client.get(url, timeout=15.0, follow_redirects=True)
+            if resp.status_code != 200:
+                return []
+            metas = (resp.json() or {}).get("metas") or []
+        except Exception as exc:
+            logger.warning(f"Cinemeta {kind} search failed: {type(exc).__name__}: {exc}")
+            return []
+        return [m for m in metas if isinstance(m, dict) and _IMDB_ID_RE.match(m.get("imdb_id") or m.get("id") or "")]
+
+    movies, series = await asyncio.gather(_catalog("movie"), _catalog("series"))
+
+    def _row(meta: dict, media_type: str) -> dict:
+        imdb = meta.get("imdb_id") or meta.get("id")
+        year = str(meta.get("releaseInfo") or meta.get("year") or "")[:4]
+        date = f"{year}-01-01" if year.isdigit() else ""
+        row = {
+            "media_type":  media_type,
+            "id":          None,
+            "imdb_id":     imdb,
+            "poster_path": None,
+            "poster_url":  meta.get("poster") or None,
+        }
+        if media_type == "movie":
+            row.update({"title": meta.get("name") or "", "release_date": date})
+        else:
+            row.update({"name": meta.get("name") or "", "first_air_date": date})
+        return row
+
+    rows: list[dict] = []
+    for i in range(max(len(movies), len(series))):
+        if i < len(movies):
+            rows.append(_row(movies[i], "movie"))
+        if i < len(series):
+            rows.append(_row(series[i], "tv"))
+    return rows[:limit]
 
 
 async def resolve_tmdb_id(

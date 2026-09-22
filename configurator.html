@@ -4309,7 +4309,28 @@ function setNoLinkedImdbId() {
   if (spinner) spinner.style.display = 'none';
 }
 
-function persistImdbId(imdbId) {
+async function fetchTmdbId(imdbId, type) {
+  const accKey = vEl('cfg-access-key');
+  const userTmdbKey = vEl('cfg-tmdb-key');
+  try {
+    const params = new URLSearchParams({ imdb_id: imdbId, type });
+    if (userTmdbKey) params.set('tmdb_key', userTmdbKey);
+    if (accKey)      params.set('access_key', accKey);
+    const resp = await fetch(`${window.location.origin}/resolve-tmdb?${params}`);
+    if (!resp.ok) return '';
+    const data = await resp.json();
+    if (data.media_type && data.media_type !== mediaType) {
+      mediaType = data.media_type;
+      document.getElementById('cfg-media-type').value = mediaType;
+    }
+    return data.tmdb_id ? String(data.tmdb_id) : '';
+  } catch (e) {
+    console.error('TMDB resolve error:', e);
+    return '';
+  }
+}
+
+function persistImdbId(imdbId, tmdbId) {
   // The resolve is async, so this can land after build() has already run.
   updateExternalLink();
   try {
@@ -4317,6 +4338,7 @@ function persistImdbId(imdbId) {
     if (!raw) return;
     const data = JSON.parse(raw);
     data.imdbId = imdbId || null;
+    if (tmdbId !== undefined) data.tmdbId = tmdbId || '';
     data.imdbCheckedAt = Date.now();
     localStorage.setItem('postersplus_selection', JSON.stringify(data));
   } catch(e) {}
@@ -4335,9 +4357,9 @@ function hydrateFromLocalStorage() {
     const raw = localStorage.getItem('postersplus_selection');
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (!data.tmdbId) return;
-    resolvedTmdbId = data.tmdbId; mediaType = data.type || 'movie';
-    document.getElementById('cfg-tmdb-resolved').value = data.tmdbId;
+    if (!data.tmdbId && !data.imdbId) return;
+    resolvedTmdbId = data.tmdbId || ''; mediaType = data.type || 'movie';
+    document.getElementById('cfg-tmdb-resolved').value = resolvedTmdbId;
     document.getElementById('cfg-media-type').value = data.type || 'movie';
     document.getElementById('cfg-search-query').value = data.title || '';
     const card = document.getElementById('selected-card');
@@ -4348,7 +4370,7 @@ function hydrateFromLocalStorage() {
     document.getElementById('selected-year').textContent  = data.year  || '—';
     const badge = document.getElementById('selected-type-badge');
     badge.textContent = (data.type || 'movie').toUpperCase(); badge.className = 'result-type-badge ' + (data.type || 'movie');
-    document.getElementById('selected-tmdb-id').textContent = data.tmdbId;
+    document.getElementById('selected-tmdb-id').textContent = data.tmdbId || 'None — using IMDb';
     const negativeIsFresh = !data.imdbId && data.imdbCheckedAt
       && (Date.now() - data.imdbCheckedAt) < IMDB_NEGATIVE_TTL_MS;
     if (data.imdbId) {
@@ -4425,10 +4447,8 @@ async function doSearch() {
   if (!q) return;
 
   const userTmdbKey = vEl('cfg-tmdb-key');
-  if (!userTmdbKey && !serverCaps.tmdb_key_set) {
-    setStatus('Enter your TMDB API key above to search', 'err');
-    return;
-  }
+  // No key guard here: without one the server searches Cinemeta instead
+  // (IMDb-keyed, key-less), and the title renders from its IMDb id.
 
   setSearchBusy(true); closeResults();
   try {
@@ -4476,12 +4496,15 @@ function renderResults(items) {
     const title = type === 'movie' ? item.title : item.name;
     const date  = type === 'movie' ? item.release_date : item.first_air_date;
     const year  = date ? date.slice(0,4) : '—';
-    const tmdbId = String(item.id);
-    const thumb = item.poster_path ? TMDB_IMG + item.poster_path : null;
+    // TMDB rows have an id; Cinemeta rows (key-less search) have an IMDb id
+    // and an absolute poster url instead.
+    const tmdbId = item.id != null ? String(item.id) : '';
+    const imdbId = item.imdb_id || '';
+    const thumb = item.poster_path ? TMDB_IMG + item.poster_path : (item.poster_url || null);
     const row = document.createElement('div');
     row.className = 'search-result-item';
     row.setAttribute('role', 'option');
-    row.dataset.tmdbId = tmdbId; row.dataset.type = type;
+    row.dataset.tmdbId = tmdbId; row.dataset.imdbId = imdbId; row.dataset.type = type;
     row.dataset.title = title; row.dataset.year = year;
     row.dataset.thumb = thumb || '';
     row.innerHTML = `
@@ -4510,13 +4533,15 @@ function outsideClickHandler(e) {
 
 async function selectResult(dataset) {
   closeResults();
-  const { tmdbId, type, title, year, thumb } = dataset;
-  resolvedTmdbId = tmdbId; resolvedImdbId = ''; mediaType = type;
+  const { type, title, year, thumb } = dataset;
+  let { tmdbId, imdbId } = dataset;
+  imdbId = imdbId || '';
+  resolvedTmdbId = tmdbId; resolvedImdbId = imdbId; mediaType = type;
   document.getElementById('cfg-tmdb-resolved').value = tmdbId;
-  document.getElementById('cfg-imdb').value = '';
+  document.getElementById('cfg-imdb').value = imdbId;
   document.getElementById('cfg-media-type').value = type;
   document.getElementById('cfg-search-query').value = title;
-  saveSelection({ tmdbId, type, title, year, thumb });
+  saveSelection({ tmdbId, imdbId: imdbId || null, type, title, year, thumb });
   const card = document.getElementById('selected-card');
   card.classList.add('visible');
   if (thumb) { document.getElementById('selected-thumb').src = thumb; document.getElementById('selected-thumb').style.display = ''; }
@@ -4525,12 +4550,32 @@ async function selectResult(dataset) {
   document.getElementById('selected-year').textContent = year;
   const badge = document.getElementById('selected-type-badge');
   badge.textContent = type.toUpperCase(); badge.className = `result-type-badge ${type}`;
-  document.getElementById('selected-tmdb-id').textContent = tmdbId;
-  document.getElementById('selected-imdb-id').textContent = '…';
+  document.getElementById('selected-tmdb-id').textContent = tmdbId || '…';
+  document.getElementById('selected-imdb-id').textContent = imdbId || '…';
   document.getElementById('selected-resolving').style.display = 'flex';
+
+  if (!tmdbId && imdbId) {
+    // A Cinemeta result: the IMDb id is in hand and the TMDB id is looked up
+    // (TMDB's /find with a key, Cinemeta's moviedb_id without).  Not having
+    // one is fine — the poster renders from the IMDb id — it just means the
+    // TMDB-keyed extras are off for this title.
+    setStatus(`Selected: ${title} (${imdbId}) — resolving TMDB ID…`, 'info');
+    imdbResolvePending = true;
+    tmdbId = await fetchTmdbId(imdbId, type);
+    imdbResolvePending = false;
+    document.getElementById('selected-resolving').style.display = 'none';
+    resolvedTmdbId = tmdbId;
+    document.getElementById('cfg-tmdb-resolved').value = tmdbId;
+    document.getElementById('selected-tmdb-id').textContent = tmdbId || 'None — using IMDb';
+    persistImdbId(imdbId, tmdbId);
+    setStatus(tmdbId ? `TMDB ID resolved: ${tmdbId}` : '', tmdbId ? 'ok' : 'info');
+    build(); queuePreviewReload();
+    return;
+  }
+
   setStatus(`Selected: ${title} (TMDB ${tmdbId}) — resolving IMDB ID…`, 'info');
   imdbResolvePending = true;
-  const imdbId = await fetchImdbId(tmdbId, type);
+  imdbId = await fetchImdbId(tmdbId, type);
   imdbResolvePending = false;
   document.getElementById('selected-resolving').style.display = 'none';
   if (imdbId) {
@@ -4733,7 +4778,10 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
   // a concrete url is one somebody pastes into a browser, and a placeholder in
   // it is just a broken url.
   const imdbId         = usePlaceholders ? ''            : resolvedImdbId;
-  const tmdbId         = usePlaceholders ? '{tmdb_id}'  : (resolvedTmdbId  || '{tmdb_id}');
+  // Likewise a concrete url with no TMDB id sends none: the IMDb id renders
+  // it (a key-less Cinemeta pick has only that), where a literal placeholder
+  // would be reported as a malformed id.
+  const tmdbId         = usePlaceholders ? '{tmdb_id}'  : resolvedTmdbId;
   const accKey         = vEl('cfg-access-key');
   const type           = usePlaceholders ? '{type}'     : mediaType;
   const userTmdbKey    = vEl('cfg-tmdb-key');
@@ -4798,7 +4846,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
   // AIOMetadata also offers {mal_id} and {anidb_id}; neither is emitted because
   // neither is wired as an art source (MAL needs auth, AniDB's API is heavily
   // restricted). The server ignores them if you add them by hand.
-  params.set('tmdb_id', tmdbId);
+  if (tmdbId) params.set('tmdb_id', tmdbId);
   if (imdbId) params.set('imdb_id', imdbId);
   if (usePlaceholders && c('tog-anime-ids')) {
     params.set('stremio_id', '{id}');
@@ -5317,7 +5365,7 @@ function resetDefaults() {
 function queuePreviewReload() {
   clearTimeout(previewDebounce);
   previewDebounce = setTimeout(() => {
-    if (resolvedTmdbId) loadPreview();
+    if (resolvedTmdbId || resolvedImdbId) loadPreview();
   }, 350);
 }
 
@@ -5334,8 +5382,10 @@ function setStatus(msg, cls='') {
 async function loadPreview() {
   if (previewLoading) { clearTimeout(previewDebounce); return; }
   if (imdbResolvePending) return;
-  if (!resolvedTmdbId) { setStatus('Search and select a title first', 'err'); return; }
-  if (!vEl('cfg-tmdb-key') && !serverCaps.tmdb_key_set) { setStatus('This instance has no server side TMDB key. You must provide your own or ask the operator to add one.', 'err'); return; }
+  if (!resolvedTmdbId && !resolvedImdbId) { setStatus('Search and select a title first', 'err'); return; }
+  // Without a key the server renders from the IMDb id (Cinemeta); only a
+  // title known by TMDB id alone has nothing to render from.
+  if (!vEl('cfg-tmdb-key') && !serverCaps.tmdb_key_set && !resolvedImdbId) { setStatus('This instance has no server side TMDB key. Provide your own, or search again — key-less search picks titles by IMDb id, which renders without one.', 'err'); return; }
   previewLoading = true;
   document.getElementById('preview-status').textContent = 'LOADING';
   const frame = document.getElementById('preview-frame');
@@ -5972,7 +6022,7 @@ const PRESETS = [
     name: 'Tinted Minimalist Notch',
     description: 'Tinted vignette with minimal rating mode displaying the rating color (gold, silver, bronze) genre and year. A matching notch at the top displays interesting information.',
     screenshot: '/static/presets/preset1.webp',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=medium&top_vignette_sash_only=true&vignette_poster_color_bottom=true&vignette_color_local=false&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=3&minimalist_mode_font_size_ratio=0.060&minimalist_mode_font_x_offset=0.065&rating_text_color=FFFFFF&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.17&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_inset=0.000&sash_badge_font_ratio=0.46&notch_vignette_color=true&badge_display_mode=0',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=medium&top_vignette_sash_only=true&vignette_poster_color_bottom=true&vignette_color_local=false&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=3&minimalist_mode_font_size_ratio=0.060&minimalist_mode_font_x_offset=0.065&rating_text_color=FFFFFF&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.17&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_font_ratio=0.46&notch_vignette_color=true&badge_display_mode=0',
   },
   {
     id: 'tinted_mini_sash',
@@ -5986,21 +6036,21 @@ const PRESETS = [
     name: 'Bar with matching notch',
     description: 'Notch and bar sampled from the posters colour, clean and easy to read.',
     screenshot: '/static/presets/preset3.webp',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=4&frost_reference=true&bar_bottom_inset=0.000&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.17&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_inset=0.000&sash_badge_font_ratio=0.46&badge_display_mode=0',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=4&frost_reference=true&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.17&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_font_ratio=0.46&badge_display_mode=0',
   },
   {
     id: 'bar_sash',
     name: 'Bar with matching sash',
     description: 'Sash and bar sampled from the posters colour, clean and easy to read.',
     screenshot: '/static/presets/preset4.webp',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=4&frost_reference=true&bar_bottom_inset=0.000&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.17&logo_bottom_anchor=true&sash_poster_color=true&sash_length_ratio=1.20&sash_height_ratio=0.135&badge_display_mode=0',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=4&frost_reference=true&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.17&logo_bottom_anchor=true&sash_poster_color=true&sash_length_ratio=1.20&sash_height_ratio=0.135&badge_display_mode=0',
   },  
   {
     id: 'ratingbar_notch',
     name: 'Rating Bar with Notch',
     description: 'The bar at the bottom is colored based on the rating for "at a glance" ratings, along with a notch sampled from the posters colour at the top.',
     screenshot: '/static/presets/preset5.webp',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&frost_reference=true&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.23&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_inset=0.000&sash_badge_font_ratio=0.46&badge_display_mode=0',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&frost_reference=true&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.23&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_font_ratio=0.46&badge_display_mode=0',
   },
   {
     id: 'ratingbar_sash',
@@ -6014,7 +6064,7 @@ const PRESETS = [
     name: 'Clean Notch',
     description: 'Clear genre and rating text with a notch at the top sampled from the posters colour.',
     screenshot: '/static/presets/preset7.webp',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=2&frost_reference=true&numeric_score_font_size_ratio=0.090&numeric_score_y_offset=0.91&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.21&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_inset=0.000&sash_badge_font_ratio=0.46&badge_display_mode=0',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=2&frost_reference=true&numeric_score_font_size_ratio=0.090&numeric_score_y_offset=0.91&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.21&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_font_ratio=0.46&badge_display_mode=0',
   },
   {
     id: 'clean_sash',
@@ -6035,7 +6085,7 @@ const PRESETS = [
     name: 'Original Art - Bar & Notch',
     description: 'Uses the original art mode with a bar rating and notch that attempt to stay out of the way.',
     screenshot: '/static/presets/preset10.webp',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=low&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=4&frost_reference=true&bar_bottom_inset=0.000&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&use_original_art=true&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.23&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_inset=0.000&sash_badge_font_ratio=0.46&badge_display_mode=0',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=low&top_vignette_sash_only=true&fallback_to_imdb=true&imdb_rating_source=fallback&tmdb_rating_source=fallback&rating_display_mode=4&frost_reference=true&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20&use_original_art=true&fallback_bg_style=photoreal&logo_max_h_ratio=0.20&logo_bottom_ratio=0.23&logo_bottom_anchor=true&sash_mode=notch&sash_badge_size_w=1.80&sash_badge_size_h=1.20&sash_badge_font_ratio=0.46&badge_display_mode=0',
   },
   // ── Landscape ──────────────────────────────────────────────────────────────
   // shape: 'landscape' switches the preview and applies only what the

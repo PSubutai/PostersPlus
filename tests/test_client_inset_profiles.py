@@ -27,13 +27,10 @@ class ClientInsetProfileTests(unittest.TestCase):
     def test_configurator_preserves_insets_when_loading_presets(self):
         html = Path("configurator.html").read_text(encoding="utf-8")
 
-        self.assertIn(
-            '<option value="stremio_tv_nuvio" selected>Stremio TV, Nuvio, Plex, Jellyfin</option>', html
-        )
-        self.assertIn(
-            '<option value="stremio_desktop_web">Stremio Desktop/Web</option>',
-            html,
-        )
+        # The two profiles exist with the TV one as the default; the labels
+        # are copy and are free to change.
+        self.assertRegex(html, r'<option value="stremio_tv_nuvio" selected>[^<]+</option>')
+        self.assertRegex(html, r'<option value="stremio_desktop_web">[^<]+</option>')
         self.assertIn(
             "stremio_tv_nuvio:    { bar: 0.000, notch: 0.000 }", html
         )
