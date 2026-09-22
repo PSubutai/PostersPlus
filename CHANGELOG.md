@@ -123,6 +123,13 @@
   `/resolve-tmdb` finds the TMDB id on selection (TMDB's `/find` with a key,
   Cinemeta's `moviedb_id` without), and the preview renders from the IMDb id
   alone when there is none. The Presets' ignored inset parameters are gone.
+- More sashes survive without a TMDB key. A Cinemeta-spined movie takes its
+  release status from Cinemeta's theatrical and disc dates (Physical /
+  Cinema / Production, with the movieleaks cache still supplying Streaming),
+  a series gets its season and episode structure from Cinemeta's episode
+  list (Mini Series, Binge Ready, New Season, Returning, Season Finale), and
+  a Trending sash backed by a custom MDBList source no longer waits on a key
+  it never needed.
 - A verbatim `{tmdb_id}` or `{tmdb_id?}` on `/poster` and `/logo` is read as
   "no TMDB id", as `{imdb_id}` already was, so a client that leaves the
   placeholder in for a title it has no TMDB id for renders from the IMDb id

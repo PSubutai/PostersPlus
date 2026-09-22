@@ -74,3 +74,40 @@ class ConfiguratorKeylessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CinemetaStructureTests(unittest.TestCase):
+    def test_episode_summary_matches_tmdb_shape(self):
+        videos = [
+            {"season": 0, "episode": 1, "released": "2010-01-01T00:00:00.000Z"},   # special, ignored
+            {"season": 1, "episode": 1, "released": "2020-01-05T00:00:00.000Z"},
+            {"season": 1, "episode": 2, "released": "2020-01-12T00:00:00.000Z"},
+            {"season": 2, "episode": 1, "released": "2021-03-01T00:00:00.000Z"},
+            {"season": 2, "episode": 2, "released": "2999-03-08T00:00:00.000Z"},   # future
+        ]
+        s = cinemeta.summarise_episodes(videos)
+        self.assertEqual(s["number_of_seasons"], 2)
+        self.assertEqual(s["number_of_episodes"], 4)
+        self.assertEqual([x["episode_count"] for x in s["seasons"]], [2, 2])
+        self.assertEqual(s["seasons"][1]["air_date"], "2021-03-01")
+        self.assertEqual(s["last_episode"], {"season_number": 2, "episode_number": 1, "air_date": "2021-03-01"})
+        self.assertEqual(s["next_episode"], {"season_number": 2, "episode_number": 2, "air_date": "2999-03-08"})
+        self.assertIsNone(cinemeta.summarise_episodes([]))
+        self.assertIsNone(cinemeta.summarise_episodes(None))
+
+    def test_normalise_carries_dates_and_structure(self):
+        meta = {
+            "id": "tt1", "name": "T", "year": "2019", "released": "2019-11-08T00:00:00.000Z",
+            "dvdRelease": "2020-01-28T00:00:00.000Z", "runtime": "133 min", "poster": "x", "background": "y",
+            "videos": [{"season": 1, "episode": 1, "released": "2019-11-08T00:00:00.000Z"}],
+        }
+        *_, tmdb_data = cinemeta.normalise(meta, "tt1")
+        self.assertEqual(tmdb_data["cinemeta_theatrical_date"], "2019-11-08")
+        self.assertEqual(tmdb_data["cinemeta_physical_date"], "2020-01-28")
+        self.assertEqual(tmdb_data["number_of_seasons"], 1)
+        self.assertEqual(tmdb_data["number_of_episodes"], 1)
+
+    def test_release_status_rescue_is_wired_for_the_cinemeta_spine(self):
+        src = open("main.py", encoding="utf-8").read()
+        self.assertIn('elif use_cinemeta and tmdb_data.get("cinemeta_theatrical_date"):', src)
+        self.assertIn("if has_tmdb_id and (effective_tmdb_key or trending_source_url(type))", src)

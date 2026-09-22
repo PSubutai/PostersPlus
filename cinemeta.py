@@ -52,7 +52,7 @@ _SENTINEL_MISS = {"__miss__": True}
 
 # Bumped whenever the normaliser or the genre vocabulary changes, so cached rows
 # built by the old logic are re-fetched rather than served.
-_METADATA_VERSION = "v1"
+_METADATA_VERSION = "v2"   # v2: dvdRelease and the episode summary joined the slim row
 
 _IMDB_ID_RE = re.compile(r"^tt\d{1,10}$")
 
@@ -188,6 +188,64 @@ def _parse_runtime(raw) -> int | None:
     return int(digits.group(0)) if digits else None
 
 
+def _iso_date(value) -> str | None:
+    """YYYY-MM-DD from Cinemeta's ISO timestamps, or None."""
+    text = str(value or "")
+    return text[:10] if re.match(r"\d{4}-\d{2}-\d{2}", text) else None
+
+
+def summarise_episodes(videos) -> dict | None:
+    """The TV structure the lifecycle sashes read, from Cinemeta's episode list.
+
+    Cinemeta lists every episode with its season, number and air date.  TMDB
+    hands the same facts over as ``number_of_seasons`` / ``number_of_episodes``,
+    a ``seasons`` list and the last aired / next-to-air episodes; this builds
+    those from the list so mini-series, binge-ready, new-season, returning
+    and finale all work on a Cinemeta-spined title.  Specials (season 0) are
+    left out, as TMDB leaves them out of its counts.
+    """
+    if not isinstance(videos, list) or not videos:
+        return None
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    per_season: dict[int, dict] = {}
+    last_ep: dict | None = None
+    next_ep: dict | None = None
+    for v in videos:
+        if not isinstance(v, dict):
+            continue
+        try:
+            season = int(v.get("season"))
+            number = int(v.get("episode") or v.get("number"))
+        except (TypeError, ValueError):
+            continue
+        if season <= 0:
+            continue
+        aired = _iso_date(v.get("released") or v.get("firstAired"))
+        row = per_season.setdefault(season, {"season_number": season, "episode_count": 0, "air_date": None})
+        row["episode_count"] += 1
+        if aired and (row["air_date"] is None or aired < row["air_date"]):
+            row["air_date"] = aired
+        if not aired:
+            continue
+        ep = {"season_number": season, "episode_number": number, "air_date": aired}
+        if aired <= today:
+            if last_ep is None or (aired, season, number) > (last_ep["air_date"], last_ep["season_number"], last_ep["episode_number"]):
+                last_ep = ep
+        elif next_ep is None or (aired, season, number) < (next_ep["air_date"], next_ep["season_number"], next_ep["episode_number"]):
+            next_ep = ep
+    if not per_season:
+        return None
+    seasons = [per_season[k] for k in sorted(per_season)]
+    return {
+        "number_of_seasons":  len(seasons),
+        "number_of_episodes": sum(s["episode_count"] for s in seasons),
+        "seasons":            seasons,
+        "last_episode":       last_ep,
+        "next_episode":       next_ep,
+    }
+
+
 def normalise(meta: dict, imdb_id: str) -> tuple:
     """Shape a Cinemeta ``meta`` document like ``tmdb.fetch_poster_metadata``:
 
@@ -220,6 +278,17 @@ def normalise(meta: dict, imdb_id: str) -> tuple:
     tmdb_data["tmdb_release_date"] = release_date
     tmdb_data["runtime"]           = _parse_runtime(meta.get("runtime"))
     tmdb_data["cinemeta_source"]   = "cinemeta"
+    # A movie's theatrical and disc dates, for the release-status sash when
+    # TMDB's /release_dates is out of reach (no key).  Digital availability
+    # comes from the r/movieleaks cache, which is IMDb-keyed already.
+    tmdb_data["cinemeta_theatrical_date"] = release_date
+    tmdb_data["cinemeta_physical_date"]   = _iso_date(meta.get("dvdRelease"))
+    # TV structure, in TMDB's shape, from the episode summary the cache keeps.
+    episodes = meta.get("episodes") or summarise_episodes(meta.get("videos"))
+    if episodes:
+        for key in ("number_of_seasons", "number_of_episodes", "seasons",
+                    "last_episode", "next_episode"):
+            tmdb_data[key] = episodes.get(key)
     # The one-sheet doubles as the original-art candidate so textless=false
     # renders the poster as-is, the way it does for a TMDB title.
     tmdb_data["original_poster_path"] = poster
@@ -314,16 +383,20 @@ async def fetch_cinemeta_meta(
         return None
 
     # Only the fields the normaliser reads — the document also carries every
-    # episode of a series, which is dead weight in the cache.
+    # episode of a series, which is dead weight in the cache.  What the
+    # lifecycle sashes need from those episodes is summarised first.
     slim = {
         k: meta.get(k)
         for k in (
-            "id", "name", "year", "releaseInfo", "released", "runtime", "status",
-            "genres", "genre", "cast", "director", "poster", "background", "logo",
-            "moviedb_id", "imdbRating",
+            "id", "name", "year", "releaseInfo", "released", "dvdRelease",
+            "runtime", "status", "genres", "genre", "cast", "director",
+            "poster", "background", "logo", "moviedb_id", "imdbRating",
         )
         if meta.get(k) is not None
     }
+    episodes = summarise_episodes(meta.get("videos"))
+    if episodes:
+        slim["episodes"] = episodes
     set_cached_tvdb_json(key, slim, CINEMETA_METADATA_CACHE_DURATION * 86400)
     return slim
 

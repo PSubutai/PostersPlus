@@ -743,7 +743,7 @@ from ratings import (
     _score_color_alt,
     _score_color_metal,
 )
-from tmdb import composite_logo, logo_centre_y, fetch_logo, image_language_order, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_landscape_image, fetch_trending_rank, fetch_trending_candidates, fetch_popular_candidates, fetch_supplemental_candidates, fetch_catalog_candidates, fetch_release_status, fetch_upcoming_movie_release, fetch_recent_movie_digital_release_date, svg_logo_supported, tmdb_metadata_cache_key, _CROP_VERSION, _fetch_metahub_logo, LOGO_ABS_MAX_H, TEXT_FORWARD_PRIORITIES as _TEXT_FORWARD_LOGO_PRIORITIES, resolve_imdb_to_tmdb, IdResolveError, poster_image_cache_key, backdrop_image_cache_key
+from tmdb import composite_logo, logo_centre_y, fetch_logo, image_language_order, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_landscape_image, fetch_trending_rank, fetch_trending_candidates, fetch_popular_candidates, fetch_supplemental_candidates, fetch_catalog_candidates, fetch_release_status, fetch_upcoming_movie_release, fetch_recent_movie_digital_release_date, svg_logo_supported, tmdb_metadata_cache_key, _CROP_VERSION, _fetch_metahub_logo, LOGO_ABS_MAX_H, TEXT_FORWARD_PRIORITIES as _TEXT_FORWARD_LOGO_PRIORITIES, resolve_imdb_to_tmdb, IdResolveError, poster_image_cache_key, backdrop_image_cache_key, trending_source_url, _compute_movie_status_from_dates, _parse_tmdb_date
 
 # Logo priorities that consult the secondary preferred language ("custom").
 # Elsewhere the secondary language is inert and must be kept out of the image
@@ -6702,8 +6702,11 @@ async def get_poster(
             rating_coro,
             # Trending rank is a TMDB list lookup, so it needs a real tmdb_id —
             # which AIOMetadata does send alongside the anime id when it has one.
+            # An operator-configured source (an MDBList page) needs no key,
+            # only the id to look up.
             fetch_trending_rank(client, tmdb_id, effective_tmdb_key, type)
-            if has_tmdb_id and effective_tmdb_key else _resolved(None),
+            if has_tmdb_id and (effective_tmdb_key or trending_source_url(type))
+            else _resolved(None),
         )
 
         rating_key_used, rating_result = rating_fetch_result
@@ -7008,6 +7011,17 @@ async def get_poster(
                 _release_status = await fetch_release_status(
                     client, tmdb_id, effective_tmdb_key, type,
                     tmdb_data.get("tmdb_status"),
+                )
+            elif use_cinemeta and tmdb_data.get("cinemeta_theatrical_date"):
+                # No key, so no /release_dates: Cinemeta's theatrical and disc
+                # dates stand in, through the same rule TMDB's dates go
+                # through.  No digital date is known here — the movieleaks
+                # override below supplies "Streaming" when it can.
+                _release_status = _compute_movie_status_from_dates(
+                    _parse_tmdb_date(tmdb_data.get("cinemeta_theatrical_date")),
+                    None,
+                    _parse_tmdb_date(tmdb_data.get("cinemeta_physical_date")),
+                    None,
                 )
             # r/movieleaks confirmation overrides TMDB's theatrical/production
             # status — if the film is in the digital-release cache it's already
