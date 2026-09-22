@@ -29,7 +29,7 @@ Those not self-hosting can [visit the public instance.](https://postersplus.elfh
 
 - **Title logos** - TMDB, Metahub, or optional TheTVDB logos composited over the artwork with configurable size and position. Language priority can combine the requested locale, original language, English, language-neutral art, and a secondary preferred language. A standalone `/logo` endpoint exposes cached TMDB/Metahub logo selection as a PNG.
 
-- **Anime-native requests** - AniList and Kitsu IDs can supply cover art, title, genres, air dates, lifecycle status, and community score without conversion to IMDb or TMDB. Any accompanying IMDb/TMDB IDs still enrich the poster with logos, MDBList ratings, awards, age ratings, release data, and quality badges.
+- **Anime-native requests** - AniList and Kitsu IDs can supply cover art, title, genres, air dates, lifecycle status, and community score without conversion to IMDb or TMDB. Any accompanying IMDb/TMDB IDs still enrich the poster with logos, MDBList ratings, awards, age ratings, release data, and quality badges. The providers ship no logos, so anime logos need a TMDB key (or TVDB); without one the title is drawn as text.
 
 - **Landscape posters** - `shape=landscape` renders a dedicated 16:9 layout from backdrop artwork, with a unified bottom information band, height-relative typography, optional textless/original art, and configurable age-badge placement.
 
