@@ -1461,6 +1461,7 @@ class RequestConfig:
     frost_reference:         bool  = False
     sash_length_ratio: float = 1.15  # diagonal sash length as fraction of poster width
     sash_height_ratio: float = 0.12  # diagonal sash height (thickness) as fraction of poster width
+    sash_side:         str   = "right"  # diagonal sash corner: "right" | "left"
     wait_for_quality: bool = False  # block response until quality is fetched (for poster-warm workflows)
     greyscale_no_quality: bool = False  # greyscale art when no quality found (needs wait_for_quality)
     rating_text_color: tuple[int, int, int] | None = None
@@ -1822,6 +1823,9 @@ def build_request_config(params: dict) -> RequestConfig:
         cfg.sash_badge_style = _style_raw
     cfg.sash_length_ratio       = _f("sash_length_ratio",      cfg.sash_length_ratio,      0.8, 1.5)
     cfg.sash_height_ratio       = _f("sash_height_ratio",      cfg.sash_height_ratio,      0.06, 0.20)
+    _side_raw = (params.get("sash_side") or "").strip().lower()
+    if _side_raw in ("left", "right"):
+        cfg.sash_side = _side_raw
     cfg.wait_for_quality        = _b("wait_for_quality",        cfg.wait_for_quality)
     cfg.greyscale_no_quality    = _b("greyscale_no_quality",    cfg.greyscale_no_quality)
     cfg.score_color_mode        = _i("score_color_mode",       cfg.score_color_mode,       0,   3)
@@ -3225,12 +3229,15 @@ def build_poster(
             )
 
     elif mode == 6:
-        # Corner bookmark — fixed to the poster top-left and coloured by tier.
+        # Corner bookmark — top-left and coloured by tier, unless a left-hand
+        # diagonal sash owns that corner.  Decided by the config, not by whether
+        # this title drew a sash, so the mark doesn't hop corners across a row.
         if not tokens or _score_points(tokens) >= cfg.badge_min_score:
             draw_quality_corner_bookmark(
                 image,
                 tokens,
                 bookmark_size=cfg.badge_height,
+                side="right" if cfg.sash_mode == "sash" and cfg.sash_side == "left" else "left",
             )
 
     elif mode == 2:
@@ -3843,7 +3850,8 @@ def build_poster(
                                     frost_saturation=_frost_sat,
                                     frost_reference=_frost_ref,
                                     star=_is_star,
-                                    text_color=cfg.sash_text_color)
+                                    text_color=cfg.sash_text_color,
+                                    side=cfg.sash_side)
 
     return image
 

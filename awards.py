@@ -1989,10 +1989,12 @@ def draw_award_sash(
     frost_reference: bool = False,
     star: bool = False,
     text_color: tuple[int, int, int] | None = None,
+    side: str = "right",
 ) -> Image.Image:
     if star:
         label = f"★  {label}"
     width, height = image.size
+    left = side == "left"
 
     # SS = supersample factor. 2× supersample + LANCZOS downsample gives edges
     # and text that are visually indistinguishable from 3× after JPEG, but cuts
@@ -2079,7 +2081,9 @@ def draw_award_sash(
 
     sash = Image.alpha_composite(sash, text_layer)
 
-    sash = sash.rotate(-45, expand=True, resample=Image.Resampling.BICUBIC)
+    # Top-right corner turns clockwise (label reads downhill); the top-left
+    # mirrors it, counter-clockwise (reads uphill).
+    sash = sash.rotate(45 if left else -45, expand=True, resample=Image.Resampling.BICUBIC)
     sash = sash.resize((sash.width // SS, sash.height // SS), Image.Resampling.LANCZOS)
 
     if muted:
@@ -2097,8 +2101,11 @@ def draw_award_sash(
     result   = image.copy()
     offset_x = int(sash.width  * 0.68)
     offset_y = int(sash.height * 0.32)
+    # Same overhang either way; the shadow falls down and away from the corner.
+    x      = offset_x - sash.width if left else width - offset_x
+    shadow_dx = -6 if left else 6
 
-    result.paste(shadow, (width - offset_x + 6, -offset_y + 6), shadow)
-    result.paste(sash,   (width - offset_x,     -offset_y),     sash)
+    result.paste(shadow, (x + shadow_dx, -offset_y + 6), shadow)
+    result.paste(sash,   (x,             -offset_y),     sash)
 
     return result

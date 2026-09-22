@@ -3062,6 +3062,14 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="cfg-sep" id="sash-size-fields" style="display:none;">
               <span class="group-title">Sash Size</span>
               <div class="field">
+                <label class="field-label" data-tip="Which top corner the diagonal sash crosses. On the left, a Corner Bookmark quality badge moves to the top right to make room.">Corner</label>
+                <select class="segmented-source" id="cfg-sash-side" onchange="build(); queuePreviewReload()">
+                  <option value="left">Left</option>
+                  <option value="right" selected>Right</option>
+                </select>
+                <div class="segmented" data-for="cfg-sash-side"></div>
+              </div>
+              <div class="field">
                 <label class="field-label">Sash Size</label>
                 <div class="range-row">
                   <input type="range" id="cfg-sash-height" min="0.06" max="0.20" step="0.005" value="0.135" oninput="updateRange(this,'rng-sh'); build(); queuePreviewReload()">
@@ -5151,6 +5159,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
       params.set('sash_poster_color',  c('tog-sash-poster-color') ? 'true' : 'false');
       params.set('sash_length_ratio',  n('cfg-sash-length').toFixed(2));
       params.set('sash_height_ratio',  n('cfg-sash-height').toFixed(3));
+      if (vEl('cfg-sash-side') === 'left') params.set('sash_side', 'left');
     }
   }
   // sash_priority is consumed not just by the diagonal sash but also by:
@@ -6896,6 +6905,7 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   if (p.has('sash_badge_frost_saturation')) _setEl('cfg-sash-badge-frost-sat', p.get('sash_badge_frost_saturation'));
   if (p.has('sash_length_ratio')) _setEl('cfg-sash-length',      p.get('sash_length_ratio'));
   if (p.has('sash_height_ratio')) _setEl('cfg-sash-height',      p.get('sash_height_ratio'));
+  _setEl('cfg-sash-side', p.get('sash_side') === 'left' ? 'left' : 'right');
   updateSashBadgeFields();
 
   if (p.has('sash_priority')) {
