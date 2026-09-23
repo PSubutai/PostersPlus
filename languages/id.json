@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} hari ini",
     "releaseDay": "{window} {day} {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Streaming {day} {month}",
+    "releaseMonthStreaming": "Streaming {month} {year}",
     "New Season": "Musim baru",
     "Returning": "Kembali",
     "Physical": "Edisi fisik",

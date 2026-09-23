@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} azi",
     "releaseDay": "{window} {day} {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Streaming {day} {month}",
+    "releaseMonthStreaming": "Streaming {month} {year}",
     "New Season": "Sezon nou",
     "Returning": "Revine",
     "Physical": "Ediție fizică",

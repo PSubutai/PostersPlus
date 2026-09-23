@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} сьогодні",
     "releaseDay": "{window} {day} {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Стримінг {day} {month}",
+    "releaseMonthStreaming": "Стримінг {month} {year}",
     "New Season": "Новий сезон",
     "Returning": "Повертається",
     "Physical": "На носіях",

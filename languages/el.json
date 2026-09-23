@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} σήμερα",
     "releaseDay": "{window} {day} {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Streaming {day} {month}",
+    "releaseMonthStreaming": "Streaming {month} {year}",
     "New Season": "Νέα σεζόν",
     "Returning": "Επιστρέφει",
     "Physical": "Φυσική έκδοση",

@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} leo",
     "releaseDay": "{day} {month} {window}",
     "releaseMonth": "{month} {year} {window}",
+    "releaseDayStreaming": "{day} {month} Mtandaoni",
+    "releaseMonthStreaming": "{month} {year} Mtandaoni",
     "New Season": "Msimu mpya",
     "Returning": "Inarudi",
     "Physical": "Nakala halisi",

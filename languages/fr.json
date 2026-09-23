@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} Aujourd'hui",
     "releaseDay": "{window} {day} {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Streaming {day} {month}",
+    "releaseMonthStreaming": "Streaming {month} {year}",
     "New Season": "Nouvelle saison",
     "Returning": "Retour",
     "Physical": "Support physique",

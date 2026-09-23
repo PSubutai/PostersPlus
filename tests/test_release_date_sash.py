@@ -186,6 +186,15 @@ class ReleaseDateTranslationTests(unittest.TestCase):
         self.assertEqual(translate_sash("Oct 16 Cinema", "en"), "Oct 16 Cinema")
         self.assertEqual(translate_sash("Dec 2027 Cinema", None), "Dec 2027 Cinema")
 
+    def test_english_dates_streaming_as_streams(self):
+        self.assertEqual(translate_sash("Sep 29 Streaming", "en"), "Streams Sep 29")
+        self.assertEqual(translate_sash("Dec 2027 Streaming", "en-US"), "Streams Dec 2027")
+        # A language with no file falls back to English, not the raw label.
+        self.assertEqual(translate_sash("Sep 29 Streaming", "ja"), "Streams Sep 29")
+        self.assertEqual(translate_sash("Sep 29 Streaming", None), "Streams Sep 29")
+        # Other languages keep their generic template.
+        self.assertEqual(translate_sash("Aug 1 Streaming", "fr"), "Streaming 1 Août")
+
     def test_languages_reorder_and_translate_month_and_window(self):
         self.assertEqual(translate_sash("Oct 16 Cinema", "fr-FR"), "Au cinéma 16 Oct")
         self.assertEqual(translate_sash("Aug 1 Streaming", "fr"), "Streaming 1 Août")

@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} vandaag",
     "releaseDay": "{window} {day} {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Streaming {day} {month}",
+    "releaseMonthStreaming": "Streaming {month} {year}",
     "New Season": "Nieuw seizoen",
     "Returning": "Keert terug",
     "Physical": "Op disc",

@@ -31,6 +31,8 @@
     "trendingToday": "Bugün #{rank}",
     "releaseDay": "{window} {day} {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Dijital {day} {month}",
+    "releaseMonthStreaming": "Dijital {month} {year}",
     "New Season": "Yeni sezon",
     "Returning": "Geri dönüyor",
     "Physical": "Fiziksel sürüm",

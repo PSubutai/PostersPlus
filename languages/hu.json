@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} ma",
     "releaseDay": "{window} {month} {day}.",
     "releaseMonth": "{window} {year} {month}",
+    "releaseDayStreaming": "Streaming {month} {day}.",
+    "releaseMonthStreaming": "Streaming {year} {month}",
     "New Season": "Új évad",
     "Returning": "Visszatér",
     "Physical": "Fizikai kiadás",

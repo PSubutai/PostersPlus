@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} danas",
     "releaseDay": "{window} {day}. {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Streaming {day}. {month}",
+    "releaseMonthStreaming": "Streaming {month} {year}",
     "New Season": "Nova sezona",
     "Returning": "Vraća se",
     "Physical": "Fizičko izdanje",

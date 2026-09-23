@@ -33,7 +33,9 @@ _NOM_SEP = " • "
 # so a language can reorder the parts; the window is the plain status label
 # ("Cinema" / "Streaming" / "Physical") and translates through its own entry,
 # and the month name comes from the top-level "monthsShort" list (twelve
-# entries, January first).
+# entries, January first).  A window can have its own pair of templates,
+# "releaseDay<Window>" / "releaseMonth<Window>", for when the plain status
+# word reads badly with a date — English dates Streaming as "Streams Sep 29".
 _RELEASE_DATE_RE = re.compile(
     r"^([A-Z][a-z]{2}) (\d{1,2}|\d{4}) (Cinema|Streaming|Physical|Premiere|Returns|Season \d+)$"
 )
@@ -105,10 +107,10 @@ def _translate_release_date(match: "re.Match[str]", sl: dict, lang: str | None) 
     else:
         window = sl.get(window_en, window_en)
     if len(rest) == 4:
-        tmpl = sl.get("releaseMonth")
+        tmpl = sl.get(f"releaseMonth{window_en}") or sl.get("releaseMonth")
         return (tmpl.replace("{month}", month).replace("{year}", rest).replace("{window}", window)
                 if tmpl else match.group(0))
-    tmpl = sl.get("releaseDay")
+    tmpl = sl.get(f"releaseDay{window_en}") or sl.get("releaseDay")
     return (tmpl.replace("{month}", month).replace("{day}", rest).replace("{window}", window)
             if tmpl else match.group(0))
 
@@ -130,7 +132,9 @@ def translate_sash(label: str | None, lang: str | None) -> str:
     """
     if not label:
         return label or ""
-    sl = _table(lang, "sashLabels")
+    # A language without a file reads the English table, so English's own
+    # wording (e.g. "Streams Sep 29") still applies rather than the raw label.
+    sl = _table(lang, "sashLabels") or _table("en", "sashLabels")
     if not sl:
         return label
 

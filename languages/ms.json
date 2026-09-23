@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} hari ini",
     "releaseDay": "{window} {day} {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Penstriman {day} {month}",
+    "releaseMonthStreaming": "Penstriman {month} {year}",
     "New Season": "Musim baharu",
     "Returning": "Kembali",
     "Physical": "Edisi fizikal",

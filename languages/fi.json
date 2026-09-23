@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} tänään",
     "releaseDay": "{window} {day}. {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Suoratoisto {day}. {month}",
+    "releaseMonthStreaming": "Suoratoisto {month} {year}",
     "New Season": "Uusi kausi",
     "Returning": "Palaa",
     "Physical": "Fyysinen julkaisu",

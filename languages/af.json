@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} vandag",
     "releaseDay": "{window} {day} {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Stroom {day} {month}",
+    "releaseMonthStreaming": "Stroom {month} {year}",
     "New Season": "Nuwe seisoen",
     "Returning": "Keer terug",
     "Physical": "Fisiese uitgawe",

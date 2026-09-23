@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} i dag",
     "releaseDay": "{window} {day}. {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Streaming {day}. {month}",
+    "releaseMonthStreaming": "Streaming {month} {year}",
     "New Season": "Ny sæson",
     "Returning": "Vender tilbage",
     "Physical": "Fysisk udgivelse",

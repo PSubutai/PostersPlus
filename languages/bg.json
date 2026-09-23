@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} днес",
     "releaseDay": "{window} {day} {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Стрийминг {day} {month}",
+    "releaseMonthStreaming": "Стрийминг {month} {year}",
     "New Season": "Нов сезон",
     "Returning": "Завръща се",
     "Physical": "На носител",

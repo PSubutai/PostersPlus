@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} heute",
     "releaseDay": "{window} {day}. {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Streaming {day}. {month}",
+    "releaseMonthStreaming": "Streaming {month} {year}",
     "New Season": "Neue Staffel",
     "Returning": "Kehrt zurück",
     "Physical": "Auf Disc",

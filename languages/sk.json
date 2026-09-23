@@ -31,6 +31,8 @@
     "trendingToday": "#{rank} dnes",
     "releaseDay": "{window} {day}. {month}",
     "releaseMonth": "{window} {month} {year}",
+    "releaseDayStreaming": "Streaming {day}. {month}",
+    "releaseMonthStreaming": "Streaming {month} {year}",
     "New Season": "Nová séria",
     "Returning": "Vracia sa",
     "Physical": "Fyzické vydanie",
