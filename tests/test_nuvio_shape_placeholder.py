@@ -222,7 +222,7 @@ class ConfiguratorDualUrlTests(unittest.TestCase):
         # so turning the preview back to portrait must not strip the settings
         # the 16:9 slot will still be served with.
         self.assertIn("const emitLandscape = landscape || dualShape;", self.html)
-        block = re.search(r"if \(emitLandscape\) \{(.*?)\n  \}", self.html, re.S)
+        block = re.search(r"if \(emitLandscape \|\| full\) \{(.*?)\n  \}", self.html, re.S)
         self.assertIsNotNone(block)
         for param in ("'landscape_art'", "'badge_pos'", "'landscape_badge_scale'",
                       "'landscape_info_scale'"):

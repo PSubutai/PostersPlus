@@ -215,5 +215,51 @@ class ReleaseDateTranslationTests(unittest.TestCase):
                 self.assertIn("{window}", data["sashLabels"]["releaseMonth"])
 
 
+class JustAddedDigitalDateTests(unittest.TestCase):
+    def _run(self, info):
+        async def _fake(client, tmdb_id, key, tmdb_status):
+            return info
+        with patch.object(tmdb, "fetch_movie_release_info", _fake):
+            return asyncio.run(tmdb.fetch_recent_movie_digital_release_date(
+                None, "1", "k", "Released"))
+
+    def test_a_new_film_arriving_digitally_is_just_added(self):
+        fresh = _iso(-3, date.today())
+        info = {"theatrical_date": _iso(-60, date.today()),
+                "digital_date": fresh, "digital_latest_date": fresh, "physical_date": None}
+        self.assertEqual(self._run(info), fresh)
+
+    def test_a_fresh_date_on_an_old_film_is_not(self):
+        # Point Break (1991): a cached row whose latest "digital" date is a
+        # Canal+ broadcast on the 12th of September 2026.
+        fresh = _iso(-3, date.today())
+        info = {"theatrical_date": "1991-07-12", "digital_date": "1998-06-20",
+                "digital_latest_date": fresh, "physical_date": "1992-01-01"}
+        self.assertIsNone(self._run(info))
+
+    def test_tv_broadcasts_are_not_the_latest_digital_date(self):
+        fresh = _iso(-3, date.today())
+
+        class _Resp:
+            def raise_for_status(self): pass
+            def json(self):
+                return {"results": [
+                    {"iso_3166_1": "US", "release_dates": [
+                        {"type": 3, "release_date": _iso(-60, date.today())},
+                        {"type": 4, "release_date": _iso(-30, date.today())}]},
+                    {"iso_3166_1": "FR", "release_dates": [
+                        {"type": 6, "release_date": fresh}]},
+                ]}
+
+        class _Client:
+            async def get(self, *a, **k): return _Resp()
+
+        with patch.object(tmdb, "get_cached_movie_release_info", lambda k: None), \
+             patch.object(tmdb, "set_cached_movie_release_info", lambda *a, **k: None):
+            info = asyncio.run(tmdb.fetch_movie_release_info(_Client(), "1", "k", "Released"))
+        self.assertEqual(info["digital_latest_date"], _iso(-30, date.today()))
+        self.assertEqual(info["digital_date"], _iso(-30, date.today()))
+
+
 if __name__ == "__main__":
     unittest.main()

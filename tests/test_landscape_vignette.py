@@ -242,8 +242,10 @@ class ConfiguratorLandscapeTests(unittest.TestCase):
         # The trio rides with the shape, and there are two ways to emit one now:
         # the landscape view, and a "{shape}" client whose single URL is
         # resolved for both layouts however the preview is pointing.
+        # The saved settings (full) carry it too, or a reload from the portrait
+        # view resets the landscape sizes.
         self.assertIn("const emitLandscape = landscape || dualShape;", self.html)
-        block = re.search(r"if \(emitLandscape\) \{(.*?)\n  \}", self.html, re.S)
+        block = re.search(r"if \(emitLandscape \|\| full\) \{(.*?)\n  \}", self.html, re.S)
         self.assertIsNotNone(block)
         for param in ("'landscape_art'", "'badge_pos'", "'landscape_badge_scale'",
                       "'landscape_info_scale'"):

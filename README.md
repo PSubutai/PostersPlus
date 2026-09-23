@@ -94,6 +94,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./postersplus-cache:/app/cache
+    env_file:
+      - path: .env       # a .env beside this file, e.g. your stack manager's env panel
+        required: false  # fine if you set everything under environment: instead
     environment:
       - ADMIN_KEY=a-long-random-string   # unlocks the admin dashboard at /admin, where everything else can be set
       - ACCESS_KEY=youraccesskey         # highly suggested if exposing to the internet*
@@ -101,6 +104,8 @@ services:
       # - TMDB_API_KEY=your_tmdb_key
       # - MDBLIST_API_KEY=your_mdblist_key
 ```
+
+> **Using a `.env` file?** Compose only reads a `.env` beside `compose.yaml` to fill in `${VAR}` placeholders in the compose file itself. Its entries reach the container only through the `env_file:` block above. That also applies to the env-file panel in stack managers like Dockge, Arcane or Komodo. Without `env_file:`, the dashboard reports "no `ADMIN_KEY`" even though the stack's env file has one. On Compose older than 2.24, which doesn't understand `required:`, use `env_file: .env` and make sure the file exists. Another option is to pass each variable through by name, as `- ADMIN_KEY=${ADMIN_KEY}` under `environment:`. A value written directly under `environment:` takes precedence over the same key in `env_file:`.
 
 Then start it:
 
@@ -128,7 +133,7 @@ docker compose up -d --build
 There are two ways to configure an instance, and they can be mixed:
 
 1. **The admin dashboard** at `/admin` — set one variable, `ADMIN_KEY`, and manage everything else from the browser. Recommended for self-hosters.
-2. **Environment variables** — copy `.env.example` to `.env`, or set them in your compose file. This is how it has always worked and still does.
+2. **Environment variables** — copy `.env.example` to `.env`, or set them in your compose file. This is how it has always worked and still does. A `.env` is only passed to the container through the compose file's `env_file:` block: the repository's `compose.yaml` has one, and the [pre-built image example](#using-the-pre-built-image-recommended) shows how to add it.
 
 Every setting is optional: API keys can be omitted from the server and passed per-request as URL parameters instead. When the same setting is in both places, **the dashboard wins** and the field says so.
 

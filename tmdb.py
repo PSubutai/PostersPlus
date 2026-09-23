@@ -2229,7 +2229,10 @@ async def fetch_movie_release_info(
             elif rtype in (4, 6):   # digital or TV broadcast
                 if earliest_digital is None or rdate < earliest_digital:
                     earliest_digital = rdate
-                if latest_digital is None or rdate > latest_digital:
+                # A TV broadcast says a film is out of cinemas, which is all the
+                # status needs, but not that it was just added anywhere: Canal+
+                # airing Point Break (1991) in September 2026 made it "New".
+                if rtype == 4 and (latest_digital is None or rdate > latest_digital):
                     latest_digital = rdate
             elif rtype in (2, 3):   # theatrical, limited or wide — both are cinemas
                 if earliest_theatrical is None or rdate < earliest_theatrical:
@@ -2258,6 +2261,11 @@ async def fetch_movie_release_info(
     return info
 
 
+# How long after a film's first release a digital date still counts as the
+# film arriving at home ("Just Added" / "New") rather than a re-release.
+JUST_ADDED_MAX_FILM_AGE_DAYS = 365
+
+
 async def fetch_recent_movie_digital_release_date(
     client: httpx.AsyncClient,
     tmdb_id: str,
@@ -2276,7 +2284,16 @@ async def fetch_recent_movie_digital_release_date(
     if digital is None:
         return None
     age = (_date.today() - digital).days
-    return digital.isoformat() if 0 <= age <= max_age_days else None
+    if not 0 <= age <= max_age_days:
+        return None
+    # A fresh digital date on a film first released years ago is a regional
+    # re-release or a remaster, not a new film arriving at home — and rows
+    # cached before TV broadcasts were left out still count those.
+    first = min(filter(None, (_parse_tmdb_date(info.get(k)) for k in
+                              ("theatrical_date", "digital_date", "physical_date"))))
+    if (digital - first).days > JUST_ADDED_MAX_FILM_AGE_DAYS:
+        return None
+    return digital.isoformat()
 
 
 # The status a movie moves to when each dated window opens — the second half

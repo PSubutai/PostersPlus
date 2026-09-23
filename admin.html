@@ -472,7 +472,8 @@
       <div class="panel-body">
         <div id="gate-disabled" class="hidden">
           <p>The dashboard is off because the server has no <code>ADMIN_KEY</code>. It is the one setting that stays in the environment — everything else can move here once it is set.</p>
-          <p>Add <code>ADMIN_KEY=&lt;a long random string&gt;</code> to your <code>.env</code> (or the compose <code>environment:</code> block), recreate the container, and reload this page.</p>
+          <p>Add <code>ADMIN_KEY=&lt;a long random string&gt;</code> to the compose <code>environment:</code> block, or to your <code>.env</code>, recreate the container, and reload this page.</p>
+          <p>Already in your <code>.env</code> (or your stack manager's env file) and still seeing this? Compose only uses that file to fill in <code>${…}</code> in the compose file. It reaches the container only if the service has <code>env_file: .env</code>, or passes the key through as <code>- ADMIN_KEY=${ADMIN_KEY}</code> under <code>environment:</code>.</p>
           <p>Don't reuse <code>ACCESS_KEY</code>: it travels in every poster URL your clients hold.</p>
         </div>
         <div id="gate-form">
