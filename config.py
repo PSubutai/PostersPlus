@@ -142,16 +142,28 @@ CINEMETA_ENABLED = _flag(_env("CINEMETA_ENABLED", "true", group='Cinemeta fallba
 CINEMETA_API_BASE = _env('CINEMETA_API_BASE', "https://v3-cinemeta.strem.io", group='Cinemeta fallback', kind='url', label='Cinemeta API base', help='Override only if you proxy Cinemeta.', advanced=True).strip().rstrip("/")
 
 # Anime-native art sources (AniList / Kitsu).
-# These engage only when a client passes anilist_id / kitsu_id — no id conversion
-# is ever performed, so metadata providers that only speak imdb/tmdb/tvdb are
-# completely unaffected.  Neither provider requires an API key.
-ANIME_SOURCES_ENABLED = _flag(_env("ANIME_SOURCES_ENABLED", "true", group='Anime sources', kind='bool', label='Anime sources', help='Serve art, titles, genres and a community score from AniList and Kitsu when a client passes anilist_id or kitsu_id. No id conversion is performed, so clients that only speak imdb/tmdb are unaffected. Neither provider needs an API key.'), True)
+# These engage only when a client passes an anime id (anilist_id / kitsu_id, or
+# one inside stremio_id), so metadata providers that only speak imdb/tmdb/tvdb
+# are completely unaffected.  Nothing is ever converted TO an anime id.  Neither provider requires an API key.
+ANIME_SOURCES_ENABLED = _flag(_env("ANIME_SOURCES_ENABLED", "true", group='Anime sources', kind='bool', label='Anime sources', help='Serve art, titles, genres and a community score from AniList and Kitsu when a client passes an anilist_id or kitsu_id (or a kitsu:/anilist: stremio_id). Clients that only speak imdb/tmdb are unaffected. Neither provider needs an API key.'), True)
 # Composite a title logo over anime cover art. On by default: that art either
 # carries no logotype or a small block of Japanese corner text most viewers
 # can't read, so a proper logo is usually an improvement. Turn off to serve the
 # provider's art untouched. Logos come from TMDB/Metahub/TVDB as usual — neither
 # anime provider ships them — so this needs a tmdb_id or imdb_id on the request.
-ANIME_COMPOSITE_LOGO  = _flag(_env("ANIME_COMPOSITE_LOGO", "true", group='Anime sources', kind='bool', label='Composite logo on anime art', help="Composite a title logo over anime cover art. That art rarely carries a logotype (or only a small block of Japanese corner text), so a proper logo is usually an improvement; off serves the provider's art untouched. Logos come from TMDB, Metahub or TVDB, so the request needs a tmdb_id or imdb_id."), True)
+ANIME_COMPOSITE_LOGO  = _flag(_env("ANIME_COMPOSITE_LOGO", "true", group='Anime sources', kind='bool', label='Composite logo on anime art', help="Composite a title logo over anime cover art. That art rarely carries a logotype (or only a small block of Japanese corner text), so a proper logo is usually an improvement; off serves the provider's art untouched. Logos come from TMDB, Metahub or TVDB, so the request needs a tmdb_id or imdb_id, or anime id mapping to supply one."), True)
+# Fill in the tmdb_id / imdb_id an anime request did not bring, from the
+# community Kitsu/AniList -> TMDB/IMDb mapping (Fribb's anime-lists, the same
+# data AIOMetadata resolves its placeholders from).  The art and metadata spine
+# stay the anime provider's; the mapped ids only unlock what those providers
+# cannot supply — TMDB's logos, the landscape backdrop, and the IMDb/TMDB-keyed
+# enrichment.  This is what makes a client that can only send "{id}" for an
+# anime title (Nuvio's own pattern resolver: "kitsu:7442" and nothing else)
+# render the same poster as one that goes through AIOMetadata.
+ANIME_ID_MAP_ENABLED = _flag(_env("ANIME_ID_MAP_ENABLED", "true", group='Anime sources', kind='bool', label='Anime id mapping', help="Fill in the TMDB and IMDb ids an anime request didn't send, from the community Kitsu/AniList mapping list (downloaded daily into a local table). Lets a client that only sends a kitsu: or anilist: id get TMDB logos, landscape backdrops and IMDb-keyed ratings; art still comes from the anime provider."), True)
+ANIME_ID_MAP_URL     = _env('ANIME_ID_MAP_URL', "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json", group='Anime sources', show_if=('ANIME_ID_MAP_ENABLED', 'true'), kind='url', label='Anime id mapping source', help="Where the mapping list is downloaded from. Must be Fribb's anime-list-full.json format.", advanced=True).strip()
+ANIME_ID_MAP_PATH    = "/app/cache/anime_ids.db"
+ANIME_ID_MAP_REFRESH_HOURS = 24
 # Capped per provider, because their limits differ by an order of magnitude.
 # AniList advertises 90 req/min per IP but has served a degraded 30 for a long
 # while (check the x-ratelimit-limit header), so it stays tight. Kitsu publishes
@@ -857,4 +869,7 @@ SASH_PRIORITY: list[str] = [
     "streaming",
     "cinema",
     "production",
+    # Last so the diff-encoded priorities the configurator writes ("slot@N")
+    # keep every position they were saved with.
+    "renewed",
 ]

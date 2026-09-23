@@ -49,6 +49,17 @@ tolerates more concurrency than AniList.
 
 Default: `8`
 
+### `ANIME_ID_MAP_URL`
+
+Where the Kitsu/AniList → TMDB/IMDb mapping behind `ANIME_ID_MAP_ENABLED` is
+downloaded from, once a day by one worker into `/app/cache/anime_ids.db`. Must
+be in the format of Fribb's `anime-list-full.json`; override only to point at a
+mirror. A failed download keeps the previous table, and with no table at all an
+anime request renders from whatever ids it brought, as it would with the
+mapping off. Its state is under `anime_id_map` on `/stats`.
+
+Default: `https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json`
+
 ### `ANIME_METADATA_CACHE_DURATION`
 
 Days to cache anime metadata. Shorter than the TVDB artwork window because the community score drifts, and the score is part of this payload.

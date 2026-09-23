@@ -86,6 +86,19 @@ class CopyTemplateCatalogueTests(unittest.TestCase):
             with self.subTest(client=template_id):
                 self.assertIn("where:", _template_literal(self.html, template_id))
 
+    def test_only_nuvio_gets_the_keys_as_literals(self):
+        # Nuvio has no "{tmdb_key}" / "{mdblist_key}" to substitute, so it
+        # would send the placeholder verbatim and the server would try it as a
+        # key. The clients that do fill them keep the placeholder.
+        self.assertIn("...COPY_KEYS_LITERAL", _template_literal(self.html, "nuvio"))
+        for client in ("aiometadata", "xperience", "bingecat", "discoverplus"):
+            with self.subTest(client=client):
+                self.assertNotIn("COPY_KEYS_LITERAL", _template_literal(self.html, client))
+        self.assertIn("const COPY_KEYS_LITERAL = { literalKeys: true };", self.html)
+        self.assertIn(
+            "const keyHolders = usePlaceholders && !template.literalKeys;", self.html
+        )
+
     def test_the_saved_configuration_carries_no_client_choice(self):
         # saveSettings round-trips through buildBaseParams with no templateId,
         # which must land on the neutral shape — otherwise a remembered client

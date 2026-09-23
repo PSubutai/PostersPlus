@@ -29,7 +29,9 @@ class DefaultOnToggleTests(unittest.TestCase):
     def test_configurator_writes_both_states(self):
         for param in DEFAULT_ON_PARAMS:
             with self.subTest(param=param):
-                match = re.search(rf"params\.set\(\s*'{param}',([^\n]*)", self.html)
+                # set() is buildBaseParams' per-shape writer (params.set under a
+                # shape's prefix), so either spelling counts.
+                match = re.search(rf"\bset\(\s*'{param}',([^\n]*)", self.html)
                 self.assertIsNotNone(match, f"{param} is never written by build()")
                 self.assertIn("'false'", match.group(1),
                               f"{param} must be written as false when its switch is off")

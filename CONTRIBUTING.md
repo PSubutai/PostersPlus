@@ -26,8 +26,10 @@ the full rules. The two that trip people up:
   through to English rather than to the base language. A region file must carry
   the full vocabulary.
 
-Contributed languages must be Latin-script — the bundled font has no CJK or
-Arabic glyphs and no right-to-left shaping.
+Contributed languages must be in Latin, Greek or Cyrillic script — the label
+font (Inter) has no CJK, Arabic, Hebrew, Indic or Thai glyphs, and there is no
+complex-text or right-to-left shaping. The i18n tests fail on any character the
+font cannot draw, and on a file missing any key from `en.json`.
 
 ## Adding a setting
 

@@ -217,11 +217,17 @@ class ConfiguratorLandscapeTests(unittest.TestCase):
         self.assertLess(shape, links)
         self.assertIn('id="tog-landscape"', self.html)
 
-    def test_build_emits_the_landscape_trio_only_in_landscape(self):
-        block = re.search(r"if \(landscape\) \{(.*?)\n  \}", self.html, re.S)
+    def test_build_emits_the_landscape_trio_whenever_the_shape_is(self):
+        # The trio rides with the shape, and there are two ways to emit one now:
+        # the landscape view, and a "{shape}" client whose single URL is
+        # resolved for both layouts however the preview is pointing.
+        self.assertIn("const emitLandscape = landscape || dualShape;", self.html)
+        block = re.search(r"if \(emitLandscape\) \{(.*?)\n  \}", self.html, re.S)
         self.assertIsNotNone(block)
-        for param in ("'shape'", "'landscape_art'", "'badge_pos'", "'landscape_badge_scale'"):
+        for param in ("'landscape_art'", "'badge_pos'", "'landscape_badge_scale'"):
             self.assertIn(param, block.group(1))
+        self.assertIn("if (dualShape) params.set('shape', '{shape}');", self.html)
+        self.assertIn("else if (landscape) params.set('shape', 'landscape');", self.html)
 
     def test_import_round_trips_and_presets_follow_their_shape(self):
         # A preset carries its shape (landscape ones say shape=landscape) and
@@ -243,7 +249,7 @@ class ConfiguratorLandscapeTests(unittest.TestCase):
             if value is not True:
                 continue
             with self.subTest(param=name):
-                match = re.search(rf"params\.set\(\s*'{name}',([^\n]*)", self.html)
+                match = re.search(rf"\bset\(\s*'{name}',([^\n]*)", self.html)
                 self.assertIsNotNone(match, f"{name} is never written by build()")
                 self.assertIn("'false'", match.group(1),
                               f"{name} must be written as false when its switch is off")
@@ -251,8 +257,9 @@ class ConfiguratorLandscapeTests(unittest.TestCase):
     def test_landscape_url_is_filtered_but_the_save_is_not(self):
         # A landscape URL carries only what landscape.py reads; the persisted
         # settings carry everything, or a reload in landscape view would lose
-        # the portrait configuration.
-        self.assertIn("const emitAll    = full || !landscape;", self.html)
+        # the portrait configuration.  A "{shape}" URL is both layouts at once,
+        # so it is not filtered either.
+        self.assertIn("const emitAll    = full || !landscape || dualShape;", self.html)
         self.assertIn("buildBaseParams({ usePlaceholders: true, full: true })", self.html)
         for gated in ("params.set('rating_display_mode', ratingMode)",
                       "params.set('badge_display_mode', badgeMode)"):

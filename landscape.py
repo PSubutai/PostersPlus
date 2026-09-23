@@ -43,7 +43,7 @@ import os
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-from i18n import translate_genre, translate_sash
+from i18n import translate_genre, translate_sash, upper_label
 
 _FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
@@ -721,16 +721,19 @@ def build_landscape(
         # badge stacked above needs something to clear.
         logo_height = _draw_title(image, fallback_title)
 
+    # Hiding the rating is passed as "there is no score": the strip already
+    # drops a missing one along with its separator, which is exactly the result
+    # wanted here, and the same switch reads the same way in either shape.
     _draw_info_strip(image,
                      "" if cfg.hide_genre else (translate_genre(genre, cfg.logo_language) or genre),
-                     release_year, score)
+                     release_year, None if cfg.hide_rating else score)
 
     if cfg.sash_mode != "hidden" and discovery_meta is not None:
         sash_result = pick_sash(discovery_meta, cfg.sash_priority)
         if sash_result is not None:
             label, _sash_type = sash_result
             position = getattr(cfg, "landscape_badge_pos", "top_left")
-            _draw_badge(image, translate_sash(label, cfg.logo_language).upper(),
+            _draw_badge(image, upper_label(translate_sash(label, cfg.logo_language), cfg.logo_language),
                         position, art, cfg, logo_height=logo_height,
                         # Only a stacked badge with an empty logo slot lands
                         # inside the band.  Stacked over a logo or a title it
