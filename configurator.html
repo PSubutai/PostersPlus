@@ -2387,6 +2387,13 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <option value="original">Original</option>
                 </select>
               </div>
+              <div class="field">
+                <label class="field-label" data-tip="Size of the genre, year and score line, 1.00 being the tuned size. It grows up and to the left from the bottom-right corner; if it would reach the logo, the genre is dropped first.">Info Size</label>
+                <div class="range-row">
+                  <input type="range" id="cfg-landscape-info-scale" min="0.60" max="2.00" step="0.05" value="1.00" oninput="updateRange(this,'rng-lis'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-lis">1.00</span>
+                </div>
+              </div>
               <!-- The Hide Genre, Hide Rating and Textless switches move in
                    here while the tabs that own them are hidden (see
                    updateShapeFields): one control, one parameter, shared by
@@ -2468,7 +2475,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               </div>
               </div><!-- /vignette-portrait-fields -->
               <div class="toggle-row">
-                <span class="toggle-label" data-tip="Fades the bottom to a dark shade of the poster's own colour instead of to black. Uses the same poster colour as the frosted bar and sash, so they always agree. Also tints the landscape poster's bottom band.">Bottom Colour from Poster</span>
+                <span class="toggle-label" data-tip="Fades the bottom into a fog of a colour the poster already has, instead of into black. Faces are left out of the choice, and art with no real colour of its own gets a deep blue. Greyscaled posters (still in cinemas) keep the plain black fade. Also tints the landscape poster's bottom band.">Bottom Colour from Poster</span>
                 <label class="toggle-switch">
                   <input type="checkbox" id="tog-vignette-color-bottom" onchange="updateGradientFields(); build(); queuePreviewReload()">
                   <div class="toggle-track"><div class="toggle-thumb"></div></div>
@@ -2476,28 +2483,37 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               </div>
               <div id="vignette-color-fields" class="subfields" style="display:none;">
                 <div class="toggle-row">
-                  <span class="toggle-label" data-tip="Ramps the vignette between the poster's two main colours across its width, instead of using one flat colour. Falls back to flat when the art has only one colour.">Two-Tone</span>
+                  <span class="toggle-label" data-tip="Ramps the vignette across its width between the poster's main colour and a neighbouring one — a red-orange into a magenta, a teal into a deep blue — each on the side of the poster it sits on. Stays flat when the art has no such pair, including clashing pairs like blue and red.">Two-Tone</span>
                   <label class="toggle-switch">
                     <input type="checkbox" id="tog-vignette-ramp" checked onchange="build(); queuePreviewReload()">
                     <div class="toggle-track"><div class="toggle-thumb"></div></div>
                   </label>
                 </div>
                 <div class="toggle-row">
-                  <span class="toggle-label" data-tip="Takes each vignette's colour from the strip of art it fades out into, rather than from the whole poster, so the band reads as that art deepening instead of a new colour arriving. The top and bottom can differ. Falls back to the whole poster when the art at the join has no colour of its own.">Blend Into Nearby Art</span>
+                  <span class="toggle-label" data-tip="Gives extra weight to colours in the art the vignette covers, so the band reads as that art deepening instead of a new colour arriving. When the covered art is plain white or black, the poster's most prominent colour elsewhere is used instead. Top and bottom always share one colour.">Blend Into Nearby Art</span>
                   <label class="toggle-switch">
                     <input type="checkbox" id="tog-vignette-local" checked onchange="build(); queuePreviewReload()">
                     <div class="toggle-track"><div class="toggle-thumb"></div></div>
                   </label>
                 </div>
                 <div class="field">
-                  <label class="field-label" data-tip="How much colour the tint carries. 0 is a plain black vignette; the vignette darkens the poster by the same amount either way.">Colour Saturation</label>
+                  <label class="field-label" data-tip="How the poster's colour becomes the fog. Shade: a darker shade of the colour, keeping most of it. Muted: a calm, dark, low-colour tone of it that sits at the same depth on every poster. Exact: the colour as it is, for colours that don't survive being darkened, like pale yellows. Colour Saturation and Lightness only apply to Shade.">Colour Style</label>
+                  <select class="segmented-source" id="cfg-vignette-style" onchange="updateGradientFields(); build(); queuePreviewReload()">
+                    <option value="shade" selected>Shade</option>
+                    <option value="muted">Muted</option>
+                    <option value="reference">Exact</option>
+                  </select>
+                  <div class="segmented" data-for="cfg-vignette-style"></div>
+                </div>
+                <div class="field" id="vignette-sat-field">
+                  <label class="field-label" data-tip="How much of the colour the fog keeps. 2.50 is the tuned default; lower is greyer, higher more vivid. 0 is a plain black vignette.">Colour Saturation</label>
                   <div class="range-row">
                     <input type="range" id="cfg-vignette-sat" min="0.0" max="3.0" step="0.05" value="2.50" oninput="updateRange(this,'rng-vsat'); build(); queuePreviewReload()">
                     <span class="range-val" id="rng-vsat">2.50</span>
                   </div>
                 </div>
-                <div class="field">
-                  <label class="field-label" data-tip="How light the tint is. 1.00 is the tuned default; lower takes the band toward black, higher toward an airy wash of the same colour. It cannot lighten a band that has no colour — at Colour Saturation 0 the vignette is plain black whatever this says. Raising it does not raise the colour cap, so a much lighter band trades some of its colour away; raise Colour Saturation too if you want both.">Lightness</label>
+                <div class="field" id="vignette-light-field">
+                  <label class="field-label" data-tip="How light the fog is. 1.30 is the tuned default; lower takes it toward black, higher toward a lighter shade of the same colour. Very light fogs make white labels harder to read.">Lightness</label>
                   <div class="range-row">
                     <input type="range" id="cfg-vignette-light" min="0.40" max="2.50" step="0.05" value="1.30" oninput="updateRange(this,'rng-vlight'); build(); queuePreviewReload()">
                     <span class="range-val" id="rng-vlight">1.30</span>
@@ -3105,7 +3121,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 </div>
               </div>
               <div class="field" id="landscape-color-link-field" style="display:none;">
-                <label class="field-label" data-tip="The band samples the art along its own edge and the badge samples the patch under it, so on some art they land a hue apart. Badge Follows Vignette gives the badge the band's colour; Vignette Follows Badge tints the band from the whole-frame colour the badge uses. Only the hue is shared — the band still darkens it and the badge still lifts it to stay readable. Needs Bottom Colour from Poster.">Colour Link</label>
+                <label class="field-label" data-tip="The band picks its colour from the art it covers and the badge samples the patch under it, so on some art they land a hue apart. Badge Follows Vignette gives the badge the band's colour; Vignette Follows Badge tints the band from the whole-frame colour the badge uses. Only the hue is shared — the band still darkens it and the badge still lifts it to stay readable. Needs Bottom Colour from Poster.">Colour Link</label>
                 <select id="cfg-landscape-color-link" onchange="build(); queuePreviewReload()">
                   <option value="off">Independent</option>
                   <option value="badge_follows_vignette" selected>Badge Follows Vignette</option>
@@ -4963,6 +4979,9 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
       // the renderer on its default and the switch would never turn anything off.
       set('vignette_color_ramp',  on('tog-vignette-ramp')  ? 'true' : 'false');
       set('vignette_color_local', on('tog-vignette-local') ? 'true' : 'false');
+      // Written even at the default: on a dual URL an absent landscape_ value
+      // falls back to the portrait one.
+      set('vignette_color_style', v['cfg-vignette-style'] || 'shade');
     }
     // Written in both states for the same reason as the tint toggles: on a dual
     // URL an absent landscape_hide_genre falls back to hide_genre, so "off"
@@ -4990,6 +5009,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
     params.set('landscape_art', vEl('cfg-landscape-art') || 'textless');
     params.set('badge_pos',     vEl('cfg-landscape-badge-pos') || 'top_left');
     params.set('landscape_badge_scale', n('cfg-landscape-badge-scale').toFixed(2));
+    params.set('landscape_info_scale', n('cfg-landscape-info-scale').toFixed(2));
     // Only meaningful with a tinted band — there is nothing to link otherwise.
     if (lShared['tog-vignette-color-bottom'] === true || lShared['tog-vignette-color-bottom'] === 'true')
       params.set('landscape_color_link', vEl('cfg-landscape-color-link') || 'off');
@@ -5936,6 +5956,11 @@ function updateGradientFields() {
   document.getElementById('vignette-color-fields').style.display =
     ((document.getElementById('tog-vignette-color-top').checked && !landscape)
      || document.getElementById('tog-vignette-color-bottom').checked) ? 'block' : 'none';
+  // Muted and Exact set the fog's colour and depth themselves, so the two
+  // sliders that shape Shade's darker tone have nothing to do there.
+  const shade = document.getElementById('cfg-vignette-style').value === 'shade';
+  document.getElementById('vignette-sat-field').style.display   = shade ? '' : 'none';
+  document.getElementById('vignette-light-field').style.display = shade ? '' : 'none';
   const link = document.getElementById('landscape-color-link-field');
   if (link) link.style.display = document.getElementById('tog-vignette-color-bottom').checked ? '' : 'none';
   syncSegmented();
@@ -5961,6 +5986,7 @@ const _SHARED_PARAM = {
   'tog-vignette-color-bottom': 'vignette_poster_color_bottom',
   'tog-vignette-ramp':         'vignette_color_ramp',
   'tog-vignette-local':        'vignette_color_local',
+  'cfg-vignette-style':        'vignette_color_style',
   'cfg-vignette-sat':          'vignette_color_saturation',
   'cfg-vignette-light':        'vignette_color_lightness',
   'cfg-vignette-blur':         'vignette_color_blur',
@@ -5972,6 +5998,7 @@ const _SHARED_PARAM = {
 const _SHAPE_SHARED = Object.keys(_SHARED_PARAM);
 const _LANDSCAPE_SHARED_DEFAULTS = {
   'tog-vignette-color-bottom': true, 'tog-vignette-ramp': true, 'tog-vignette-local': false,
+  'cfg-vignette-style': 'shade',
   'cfg-vignette-sat': '2.00', 'cfg-vignette-light': '1.30', 'cfg-vignette-blur': '1.00',
   'tog-hide-genre': false, 'tog-hide-rating': false, 'tog-textless': false, 'cfg-sash-mode': 'sash',
 };
@@ -6594,7 +6621,8 @@ function _buildPresetCard(grid, preset) {
 // touch them: a landscape preset says nothing about the rating bar, and
 // importing it would otherwise reset the rating bar to its defaults.
 const _LANDSCAPE_ONLY_CONTROLS = ['cfg-landscape-art', 'cfg-landscape-badge-pos',
-                                  'cfg-landscape-badge-scale', 'cfg-landscape-color-link'];
+                                  'cfg-landscape-badge-scale', 'cfg-landscape-info-scale',
+                                  'cfg-landscape-color-link'];
 // Everything both shapes read, or that a preset never carries (identity and
 // keys — settingsOnly leaves them alone in any case).
 const _BOTH_SHAPES_CONTROLS = new Set([
@@ -6851,6 +6879,8 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   if (p.has('vignette_color_lightness')) _setEl('cfg-vignette-light', p.get('vignette_color_lightness'));
   if (p.has('vignette_color_ramp'))       _setEl('tog-vignette-ramp', p.get('vignette_color_ramp'));
   if (p.has('vignette_color_local'))      _setEl('tog-vignette-local', p.get('vignette_color_local'));
+  { const _vs = p.get('vignette_color_style');
+    if (['shade','muted','reference'].includes(_vs)) _setEl('cfg-vignette-style', _vs); }
   if (p.has('notch_vignette_color'))      _setEl('tog-notch-vignette-color', p.get('notch_vignette_color'));
   if (p.has('hide_genre')) _setEl('tog-hide-genre', p.get('hide_genre'));
   if (p.has('hide_rating')) _setEl('tog-hide-rating', p.get('hide_rating'));
@@ -6863,6 +6893,7 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
     _setEl('cfg-landscape-badge-pos',  p.get('badge_pos')            || 'top_left');
     _setEl('cfg-landscape-color-link', p.get('landscape_color_link') || 'badge_follows_vignette');
     _setEl('cfg-landscape-badge-scale', p.get('landscape_badge_scale') || '1.00');
+    _setEl('cfg-landscape-info-scale', p.get('landscape_info_scale') || '1.00');
   }
   // Anime ids carry no setting to restore: which ids a URL may use is decided
   // by the copy template now, so stremio_id / anilist_id / kitsu_id on an

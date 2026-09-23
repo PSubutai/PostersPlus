@@ -5,7 +5,7 @@ import re
 import unittest
 from unittest import mock
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 import main
 import landscape
@@ -27,17 +27,16 @@ class LandscapeVignetteTests(unittest.TestCase):
             setattr(cfg, k, v)
         return cfg
 
-    def test_band_colour_goes_through_the_seam_rule(self):
+    def test_band_colour_goes_through_the_fog_pick(self):
         # Blend Into Nearby Art used to be ignored here: the band took the
-        # whole-poster pick regardless.  It now routes through the same helper
-        # as the portrait bottom band, with the local flag as asked for.
+        # whole-poster pick regardless.  It routes through the same pick as the
+        # portrait bottom band, with the local flag as asked for.
         art = _art()
-        with mock.patch.object(main, "_vignette_band_colour",
-                               wraps=main._vignette_band_colour) as spy:
+        with mock.patch.object(main, "_fog_pick", wraps=main._fog_pick) as spy:
             landscape._draw_vignette(art.copy(), art, self._cfg(vignette_color_local=False))
-            self.assertEqual(spy.call_args.args[3], False)
+            self.assertEqual(spy.call_args.args[2], False)
             landscape._draw_vignette(art.copy(), art, self._cfg(vignette_color_local=True))
-            self.assertEqual(spy.call_args.args[3], True)
+            self.assertEqual(spy.call_args.args[2], True)
 
     def test_local_changes_the_painted_band(self):
         art = _art()
@@ -126,6 +125,28 @@ class LandscapeLogoAndBadgeTests(unittest.TestCase):
         cfg = main.build_request_config({"landscape_badge_scale": "1.5"})
         self.assertEqual(cfg.landscape_badge_scale, 1.5)
         self.assertEqual(main.build_request_config({"landscape_badge_scale": "9"}).landscape_badge_scale, 2.5)
+
+    def test_info_scale_grows_the_strip(self):
+        # The strip's ink grows with the scale, pinned to the right edge.
+        def ink_bbox(scale, logo_right=300):
+            art = Image.new("RGBA", (1000, 563), (20, 20, 20, 255))
+            landscape._draw_info_strip(art, "Drama", "2019", 87, scale=scale,
+                                       logo_right=logo_right)
+            diff = ImageChops.difference(art.convert("RGB"), Image.new("RGB", art.size, (20, 20, 20)))
+            return diff.convert("L").point(lambda v: 255 if v > 60 else 0).getbbox()
+        x0, y0, x1, y1 = ink_bbox(1.0)
+        X0, Y0, X1, Y1 = ink_bbox(1.5)
+        self.assertAlmostEqual((Y1 - Y0) / (y1 - y0), 1.5, delta=0.15)
+        self.assertLess(X0, x0)
+        self.assertAlmostEqual(X1, x1, delta=3)
+        # Beside a narrow logo the enlarged strip keeps its genre; beside one
+        # that really is wide it still sheds it rather than colliding.
+        shed = ink_bbox(1.5, logo_right=560)[0]
+        self.assertGreater(shed, 560)
+        self.assertLess(X0, shed - 100)             # the genre is the difference
+        cfg = main.build_request_config({"landscape_info_scale": "1.5"})
+        self.assertEqual(cfg.landscape_info_scale, 1.5)
+        self.assertEqual(main.build_request_config({"landscape_info_scale": "9"}).landscape_info_scale, 2.0)
 
     def test_badge_shadow_clips_at_the_canvas_edge(self):
         # A top-left pill's shadow spills past x=0 / y=0; it must be clipped
@@ -224,7 +245,8 @@ class ConfiguratorLandscapeTests(unittest.TestCase):
         self.assertIn("const emitLandscape = landscape || dualShape;", self.html)
         block = re.search(r"if \(emitLandscape\) \{(.*?)\n  \}", self.html, re.S)
         self.assertIsNotNone(block)
-        for param in ("'landscape_art'", "'badge_pos'", "'landscape_badge_scale'"):
+        for param in ("'landscape_art'", "'badge_pos'", "'landscape_badge_scale'",
+                      "'landscape_info_scale'"):
             self.assertIn(param, block.group(1))
         self.assertIn("if (dualShape) params.set('shape', '{shape}');", self.html)
         self.assertIn("else if (landscape) params.set('shape', 'landscape');", self.html)

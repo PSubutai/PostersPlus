@@ -89,6 +89,17 @@ def detect_faces(image) -> list[tuple[float, float, float]]:
     still letting bounding-box area break ties between two similarly-confident
     real faces (e.g. lead vs. background extra) as originally intended.
     """
+    return [(x + fw / 2.0, fw, max(score, 0.0) ** 3 * fw * fh)
+            for x, _y, fw, fh, score in detect_face_boxes(image)]
+
+
+def detect_face_boxes(image) -> list[tuple[float, float, float, float, float]]:
+    """[(x, y, width, height, score), …] in pixels for detected faces.
+
+    Empty list when there are no faces or detection is unavailable.  The tinted
+    vignette uses the boxes to keep faces out of its colour vote (see
+    main._fog_profile); detect_faces reduces them to the crop's weights.
+    """
     det = _ensure_detector()
     if det is None:
         return []
@@ -102,11 +113,8 @@ def detect_faces(image) -> list[tuple[float, float, float]]:
             _n, faces = det.detect(arr)
         if faces is None:
             return []
-        out = []
-        for f in faces:
-            x, fw, fh, score = float(f[0]), float(f[2]), float(f[3]), float(f[-1])
-            out.append((x + fw / 2.0, fw, max(score, 0.0) ** 3 * fw * fh))
-        return out
+        return [(float(f[0]), float(f[1]), float(f[2]), float(f[3]), float(f[-1]))
+                for f in faces]
     except Exception as exc:
         logger.warning(f"face detect error: {exc}")
         return []

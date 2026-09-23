@@ -224,7 +224,8 @@ class ConfiguratorDualUrlTests(unittest.TestCase):
         self.assertIn("const emitLandscape = landscape || dualShape;", self.html)
         block = re.search(r"if \(emitLandscape\) \{(.*?)\n  \}", self.html, re.S)
         self.assertIsNotNone(block)
-        for param in ("'landscape_art'", "'badge_pos'", "'landscape_badge_scale'"):
+        for param in ("'landscape_art'", "'badge_pos'", "'landscape_badge_scale'",
+                      "'landscape_info_scale'"):
             self.assertIn(param, block.group(1))
 
     def test_importing_a_dual_url_settles_both_shape_stashes(self):

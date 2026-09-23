@@ -199,10 +199,9 @@ def _draw_vignette(image: Image.Image, art: Image.Image, cfg,
     badge can follow it the other way round.
     """
     from main import (
-        _vignette_dominant_rgb, _vignette_secondary_rgb, _vignette_hue_profile,
-        _vignette_band_colour, _vignette_seam, _vignette_tint_band,
-        _vignette_frost_band, _vignette_level_band, _VIGNETTE_SAT_FULL,
-        _VIGNETTE_MATCH_MIN_CONF,
+        _fog_pick, _fog_faces, _vignette_tint_band, _vignette_frost_band, _vignette_level_band,
+        _vignette_composite, _VIGNETTE_SAT_FULL, _VIGNETTE_MATCH_MIN_CONF,
+        _VIGNETTE_SEAM_H,
     )
 
     width, height = image.size
@@ -217,29 +216,20 @@ def _draw_vignette(image: Image.Image, art: Image.Image, cfg,
     box = (0, band_y, width, height)
     tinted = None
     painted = None
+    cover = None
     if cfg.vignette_poster_color_bottom:
         if source is not None:
             # Handed a colour: paint with it outright.  Confidence is the
             # badge's business, and it has already committed to this hue.
-            tint, conf = tuple(float(c) for c in source), 1.0
-            second = _vignette_secondary_rgb(art, tint) if cfg.vignette_color_ramp else None
+            tint, conf, second = tuple(float(c) for c in source), 1.0, None
         else:
-            _strict, tint, conf = _vignette_dominant_rgb(art)
-            second = None
-            if tint is not None:
-                second = (
-                    _vignette_secondary_rgb(art, tint)
-                    if cfg.vignette_color_ramp and conf > 0 else None
-                )
-                # The same seam-versus-whole choice the portrait bottom band
-                # makes (see _vignette_band_colour), so "Blend Into Nearby Art"
-                # means the same thing on both shapes.  The band's inner edge
-                # is band_y and it lies below that edge, hence +1.
-                tint, conf, second = _vignette_band_colour(
-                    art, _vignette_seam(width, height, band_y, +1, ramp),
-                    (tint, conf, second, _vignette_hue_profile(art)[3]),
-                    cfg.vignette_color_local, cfg.vignette_color_ramp,
-                )
+            # The same pick the portrait bottom band makes (see _fog_pick), so
+            # "Blend Into Nearby Art" means the same thing on both shapes: the
+            # art this band covers, plus its seam, counts extra.
+            tint, conf, second, cover = _fog_pick(
+                art, (0, max(0, band_y - int(height * _VIGNETTE_SEAM_H)), width, height),
+                cfg.vignette_color_local, cfg.vignette_color_ramp, _fog_faces(art),
+            )
         if tint is not None:
             # Same derivation the portrait bands use: levelling follows
             # whichever of saturation / blur is asking for more of it.
@@ -257,12 +247,16 @@ def _draw_vignette(image: Image.Image, art: Image.Image, cfg,
                 cfg.vignette_color_saturation, cfg.vignette_color_blur,
                 second, cfg.vignette_color_lightness,
                 columns=_TINT_COLUMNS, ramp_columns=_RAMP_COLUMNS,
-            ).convert("RGBA")
+                cover_lightness=cover, style=cfg.vignette_color_style,
+            )
 
     if tinted is None:
         tinted = Image.new("RGBA", (width, band_h), (0, 0, 0, 0))
-    tinted.putalpha(ramp)
-    image.paste(tinted, (0, band_y), mask=tinted)
+        tinted.putalpha(ramp)
+        image.paste(tinted, (0, band_y), mask=tinted)
+    else:
+        # Dithered, like the portrait bands — see _vignette_composite.
+        _vignette_composite(image, band_y, tinted, _band_ramp(band_h).astype(np.float32))
     return painted
 
 
@@ -444,8 +438,9 @@ def _draw_badge(image: Image.Image, text: str, position: str, art: Image.Image,
               fill=(*ink, 245))
 
 
-def _draw_logo(image: Image.Image, logo: Image.Image) -> int:
-    """Left-aligned, bottom-anchored. Returns the drawn height."""
+def _draw_logo(image: Image.Image, logo: Image.Image) -> tuple[int, int]:
+    """Left-aligned, bottom-anchored. Returns (drawn height, right edge x) — the
+    edge is what the info strip keeps clear of (see _draw_info_strip)."""
     width, height = image.size
 
     alpha = logo.getchannel("A")
@@ -453,7 +448,7 @@ def _draw_logo(image: Image.Image, logo: Image.Image) -> int:
     if bbox:
         logo = logo.crop(bbox)
     if logo.width <= 0 or logo.height <= 0:
-        return 0
+        return 0, 0
 
     max_h = int(height * _LOGO_MAX_H)
     scale = min(int(width * _LOGO_MAX_W) / logo.width, max(1, max_h) / logo.height)
@@ -471,7 +466,7 @@ def _draw_logo(image: Image.Image, logo: Image.Image) -> int:
     _drop_shadow(image, drawn.getchannel("A"), x + _LOGO_SHADOW_DX, y + _LOGO_SHADOW_DY,
                  _LOGO_SHADOW_BLUR, _LOGO_SHADOW_ALPHA)
     image.alpha_composite(drawn, (x, y))
-    return drawn.height
+    return drawn.height, x + drawn.width
 
 
 def _wrap(draw, text: str, font, max_w: float, max_lines: int) -> list[str] | None:
@@ -517,11 +512,12 @@ def _ellipsize(draw, text: str, font, max_w: float) -> str:
     return f"{stem}…" if stem else ""
 
 
-def _draw_title(image: Image.Image, title: str) -> int:
+def _draw_title(image: Image.Image, title: str) -> tuple[int, int]:
     """Left-aligned, bottom-anchored text stand-in for a missing logo.
 
-    Shares the logo's box, and returns the drawn height the same way, so a badge
-    stacked above it clears the text rather than landing on it.
+    Shares the logo's box, and returns (drawn height, right edge x) the same
+    way, so a badge stacked above it clears the text rather than landing on it
+    and the info strip knows how far the text actually reaches.
     """
     width, height = image.size
     draw = ImageDraw.Draw(image)
@@ -583,24 +579,36 @@ def _draw_title(image: Image.Image, title: str) -> int:
 
     font, lines, line_h = chosen
     baseline = int(height * _BASELINE)
+    x = int(width * _SIDE_PAD)
     for i, line in enumerate(reversed(lines)):
-        draw.text((int(width * _SIDE_PAD), baseline - i * line_h), line,
+        draw.text((x, baseline - i * line_h), line,
                   font=font, fill=(255, 255, 255, 245), anchor="ls")
 
     ascent = font.getmetrics()[0]
-    return line_h * (len(lines) - 1) + ascent
+    right = x + int(max(draw.textlength(line, font=font) for line in lines))
+    return line_h * (len(lines) - 1) + ascent, right
 
 
 def _draw_info_strip(image: Image.Image, genre_label: str,
-                     release_year: str | None, score) -> None:
+                     release_year: str | None, score, scale: float = 1.0,
+                     logo_right: int | None = None) -> None:
     """`Genre • Year • 87`, right-aligned on the shared baseline.
 
     Drawn right-to-left so the score stays pinned to the right edge whatever the
     genre string does, and the whole strip is measured before anything is drawn
     so a long genre can be dropped rather than colliding with the logo.
+
+    ``scale`` (landscape_info_scale) sizes the text and its shadow together;
+    the baseline and right edge stay put, so it grows up and to the left.
+
+    ``logo_right`` is where the logo (or title) actually ends.  The strip keeps
+    clear of that rather than of the widest a logo is ever allowed to be: with
+    the maximum reserved, a narrow logo still cost the strip its genre, and at
+    any enlarged size it lost it every time.  None falls back to the maximum.
     """
     width, height = image.size
-    font = _font("Inter-Bold.ttf", int(height * _INFO_FONT))
+    scale = max(0.1, float(scale or 1.0))
+    font = _font("Inter-Bold.ttf", max(1, int(height * _INFO_FONT * scale)))
     draw = ImageDraw.Draw(image)
 
     # No rating is not a rating of nothing: a title MDBList has no score for
@@ -637,7 +645,8 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
 
     # Everything left of the info strip belongs to the logo; if the two would
     # meet, shed the genre first, then the year, before shrinking any type.
-    limit = width * (1 - _RIGHT_PAD) - width * (_SIDE_PAD + _LOGO_MAX_W) - width * 0.03
+    left = width * (_SIDE_PAD + _LOGO_MAX_W) if logo_right is None else logo_right
+    limit = width * (1 - _RIGHT_PAD) - left - width * 0.03
     while len(parts) > 1 and total(parts) > limit:
         parts.pop(0)
 
@@ -666,7 +675,7 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
         x0, y0, x1, y1 = bbox
         shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
         _drop_shadow(shadow, ink.crop(bbox), x0 + _LOGO_SHADOW_DX, y0 + _LOGO_SHADOW_DY,
-                     _INFO_SHADOW_BLUR, _INFO_SHADOW_ALPHA)
+                     _INFO_SHADOW_BLUR * scale, _INFO_SHADOW_ALPHA)
         shadow.putalpha(ImageChops.multiply(shadow.getchannel("A"), ImageChops.invert(ink)))
         image.alpha_composite(shadow)
     image.alpha_composite(layer)
@@ -713,20 +722,22 @@ def build_landscape(
     # cases that matter — `original` falling back to the neutral backdrop or to
     # the genre canvas passes a title precisely because that art has none, and
     # suppressing it produced a completely untitled render.
-    logo_height = 0
+    logo_height, logo_right = 0, None
     if logo is not None:
-        logo_height = _draw_logo(image, logo)
+        logo_height, logo_right = _draw_logo(image, logo)
     elif fallback_title:
         # Height comes back for the same reason it does from the logo: a
         # badge stacked above needs something to clear.
-        logo_height = _draw_title(image, fallback_title)
+        logo_height, logo_right = _draw_title(image, fallback_title)
 
     # Hiding the rating is passed as "there is no score": the strip already
     # drops a missing one along with its separator, which is exactly the result
     # wanted here, and the same switch reads the same way in either shape.
     _draw_info_strip(image,
                      "" if cfg.hide_genre else (translate_genre(genre, cfg.logo_language) or genre),
-                     release_year, None if cfg.hide_rating else score)
+                     release_year, None if cfg.hide_rating else score,
+                     scale=getattr(cfg, "landscape_info_scale", 1.0),
+                     logo_right=logo_right)
 
     if cfg.sash_mode != "hidden" and discovery_meta is not None:
         sash_result = pick_sash(discovery_meta, cfg.sash_priority)
