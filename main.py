@@ -1448,6 +1448,9 @@ class RequestConfig:
     # and padding scale together, so the pill keeps its proportions.
     landscape_badge_scale: float = 1.0
     landscape_info_scale: float = 1.0   # size of the landscape "Genre • Year • Score" line
+    # Drops the year from that line.  Landscape only: the portrait year is a
+    # Minimalist display choice of its own, not a field of a shared label.
+    landscape_hide_year: bool = False
     score_color_mode: int = 2
     score_custom_palette: CustomScorePalette | None = None
     sash_badge: bool = False              # legacy; superseded by sash_mode (kept for back-compat parsing)
@@ -1812,6 +1815,7 @@ def build_request_config(params: dict) -> RequestConfig:
         cfg.landscape_color_link = _ls_link
     cfg.landscape_badge_scale = _f("landscape_badge_scale", cfg.landscape_badge_scale, 0.5, 2.5)
     cfg.landscape_info_scale  = _f("landscape_info_scale",  cfg.landscape_info_scale,  0.5, 2.0)
+    cfg.landscape_hide_year   = _b("landscape_hide_year",   cfg.landscape_hide_year)
 
     cfg.sash_badge              = _b("sash_badge",              cfg.sash_badge)
     # sash_mode supersedes the legacy sash_badge bool; fall back to it for old

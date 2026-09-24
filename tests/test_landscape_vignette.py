@@ -148,6 +148,18 @@ class LandscapeLogoAndBadgeTests(unittest.TestCase):
         self.assertEqual(cfg.landscape_info_scale, 1.5)
         self.assertEqual(main.build_request_config({"landscape_info_scale": "9"}).landscape_info_scale, 2.0)
 
+    def test_hide_year_drops_the_year_from_the_strip(self):
+        def ink(hide):
+            art = Image.new("RGBA", (1000, 563), (20, 20, 20, 255))
+            cfg = main.RequestConfig(shape="landscape", sash_mode="hidden", landscape_hide_year=hide)
+            out = landscape.build_landscape(art, 87, "Drama", cfg, release_year="2019")
+            return out.convert("L").point(lambda v: 255 if v > 120 else 0).histogram()[255]
+        self.assertGreater(ink(True), 0)                # genre and score still drawn
+        self.assertLess(ink(True), ink(False))
+        self.assertFalse(main.build_request_config({}).landscape_hide_year)
+        self.assertTrue(main.build_request_config({"landscape_hide_year": "true"}).landscape_hide_year)
+        self.assertFalse(main.build_request_config({"landscape_hide_year": "false"}).landscape_hide_year)
+
     def test_badge_shadow_clips_at_the_canvas_edge(self):
         # A top-left pill's shadow spills past x=0 / y=0; it must be clipped
         # rather than refused, and it must darken the art around the pill.
@@ -248,7 +260,7 @@ class ConfiguratorLandscapeTests(unittest.TestCase):
         block = re.search(r"if \(emitLandscape \|\| full\) \{(.*?)\n  \}", self.html, re.S)
         self.assertIsNotNone(block)
         for param in ("'landscape_art'", "'badge_pos'", "'landscape_badge_scale'",
-                      "'landscape_info_scale'"):
+                      "'landscape_info_scale'", "'landscape_hide_year'"):
             self.assertIn(param, block.group(1))
         self.assertIn("if (dualShape) params.set('shape', '{shape}');", self.html)
         self.assertIn("else if (landscape) params.set('shape', 'landscape');", self.html)
@@ -296,6 +308,13 @@ class ConfiguratorLandscapeTests(unittest.TestCase):
             self.assertIn(f'id="{row}"', self.html)
         self.assertIn('id="landscape-docked-rows"', self.html)
         self.assertIn('id="cfg-landscape-color-link"', self.html)
+
+    def test_hide_year_docks_between_hide_genre_and_hide_rating(self):
+        docked = re.search(r"const _DOCKED_ROWS = \[(.*?)\];", self.html, re.S).group(1)
+        self.assertLess(docked.index("'hide-genre-row'"), docked.index("'hide-year-row'"))
+        self.assertLess(docked.index("'hide-year-row'"), docked.index("'hide-rating-row'"))
+        self.assertRegex(self.html, r"_LANDSCAPE_ONLY_CONTROLS = \[[^\]]*'tog-landscape-hide-year'")
+        self.assertIn("_setEl('tog-landscape-hide-year',  p.get('landscape_hide_year')  || 'false');", self.html)
 
     def test_landscape_presets_carry_their_shape(self):
         # Three landscape presets, each marked so the gallery groups them and

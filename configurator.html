@@ -2394,6 +2394,18 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <span class="range-val" id="rng-lis">1.00</span>
                 </div>
               </div>
+              <!-- Hide Year is landscape-only; it docks between Hide Genre and
+                   Hide Rating with the others, and its home stays hidden with
+                   this group in portrait. -->
+              <div id="hide-year-home">
+                <div class="toggle-row" id="hide-year-row">
+                  <span class="toggle-label" data-tip="Removes the release year from the landscape info line.">Hide Year</span>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="tog-landscape-hide-year" onchange="build(); queuePreviewReload()">
+                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                  </label>
+                </div>
+              </div>
               <!-- The Hide Genre, Hide Rating and Textless switches move in
                    here while the tabs that own them are hidden (see
                    updateShapeFields): one control, one parameter, shared by
@@ -5016,6 +5028,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
     params.set('badge_pos',     vEl('cfg-landscape-badge-pos') || 'top_left');
     params.set('landscape_badge_scale', n('cfg-landscape-badge-scale').toFixed(2));
     params.set('landscape_info_scale', n('cfg-landscape-info-scale').toFixed(2));
+    params.set('landscape_hide_year', c('tog-landscape-hide-year') ? 'true' : 'false');
     // Only meaningful with a tinted band — there is nothing to link otherwise.
     if (lShared['tog-vignette-color-bottom'] === true || lShared['tog-vignette-color-bottom'] === 'true')
       params.set('landscape_color_link', vEl('cfg-landscape-color-link') || 'off');
@@ -6097,9 +6110,11 @@ function toggleShape() {
 // filed.  The switches it does read from those tabs (Hide Genre, Hide Rating,
 // Textless) are docked into the Landscape group meanwhile — moved, not copied,
 // so there is one control and one parameter whichever shape is showing.
+// Hide Year is landscape-only and docks with them purely to sit in order.
 const _PORTRAIT_ONLY_TABS = ['rating', 'logo', 'quality'];
 const _DOCKED_ROWS = [
   { id: 'hide-genre-row',  home: 'hide-genre-home' },
+  { id: 'hide-year-row',   home: 'hide-year-home' },
   { id: 'hide-rating-row', home: 'hide-rating-home' },
   { id: 'textless-row',    home: 'textless-home' },
 ];
@@ -6628,7 +6643,7 @@ function _buildPresetCard(grid, preset) {
 // importing it would otherwise reset the rating bar to its defaults.
 const _LANDSCAPE_ONLY_CONTROLS = ['cfg-landscape-art', 'cfg-landscape-badge-pos',
                                   'cfg-landscape-badge-scale', 'cfg-landscape-info-scale',
-                                  'cfg-landscape-color-link'];
+                                  'cfg-landscape-color-link', 'tog-landscape-hide-year'];
 // Everything both shapes read, or that a preset never carries (identity and
 // keys — settingsOnly leaves them alone in any case).
 const _BOTH_SHAPES_CONTROLS = new Set([
@@ -6900,6 +6915,7 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
     _setEl('cfg-landscape-color-link', p.get('landscape_color_link') || 'badge_follows_vignette');
     _setEl('cfg-landscape-badge-scale', p.get('landscape_badge_scale') || '1.00');
     _setEl('cfg-landscape-info-scale', p.get('landscape_info_scale') || '1.00');
+    _setEl('tog-landscape-hide-year',  p.get('landscape_hide_year')  || 'false');
   }
   // Anime ids carry no setting to restore: which ids a URL may use is decided
   // by the copy template now, so stremio_id / anilist_id / kitsu_id on an

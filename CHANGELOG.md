@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Hide Year in landscape
+
+- **Core → Landscape → Hide Year** (`landscape_hide_year=true`) takes the
+  year out of the 16:9 `Genre • Year • Score` line, separator and all, the way
+  Hide Genre and Hide Rating take out theirs. It sits between those two while
+  the landscape preview is showing. Portrait has no equivalent switch, so the
+  parameter is landscape-only and a portrait render ignores it.
+
 ### One Nuvio URL for both shapes
 
 - Nuvio's custom poster pattern gained a `{shape}` placeholder, which its

@@ -733,9 +733,11 @@ def build_landscape(
     # Hiding the rating is passed as "there is no score": the strip already
     # drops a missing one along with its separator, which is exactly the result
     # wanted here, and the same switch reads the same way in either shape.
+    # Hiding the year works the same way, as "there is no year".
     _draw_info_strip(image,
                      "" if cfg.hide_genre else (translate_genre(genre, cfg.logo_language) or genre),
-                     release_year, None if cfg.hide_rating else score,
+                     None if getattr(cfg, "landscape_hide_year", False) else release_year,
+                     None if cfg.hide_rating else score,
                      scale=getattr(cfg, "landscape_info_scale", 1.0),
                      logo_right=logo_right)
 
